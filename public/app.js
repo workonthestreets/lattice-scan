@@ -181,6 +181,7 @@ async function route() {
   const { seg, arg } = parseRoute();
   window.scrollTo(0, 0);
   lastAuthError = null;
+  head.className = 'page__head';
   paintWhoami();
   if (seg === 'party' && /\/history$/.test(arg)) { setTab('party'); return renderPartyHistory(arg.replace(/\/history$/, '')); }
   if (seg === 'party' && arg) { setTab('party'); return renderParty(arg); }
@@ -290,10 +291,9 @@ function templatesTable() {
 }
 
 async function renderOverview() {
-  head.innerHTML = `<div class="head-row">
-      <h1 class="page__h">One Canton node. Its <em>honest</em> view.</h1>
-      <span id="live"></span>
-    </div><p class="page__sub" id="boundary"></p>`;
+  head.className = 'page__head page__head--center';
+  head.innerHTML = `<div class="head-live"><span id="live"></span></div>
+      <h1 class="page__h"><em>Lattice:</em> The Canton Scanner</h1>`;
   view.innerHTML = `<div id="strip">${loading()}</div>
     <section class="sec">${overviewTabs()}${overviewPanel('updates')}${overviewPanel('templates')}</section>`;
 
@@ -301,7 +301,6 @@ async function renderOverview() {
     try {
       const d = await api('/health');
       $('#live').innerHTML = liveStatus(d.tail);
-      $('#boundary').textContent = d.boundary || '';
       $('#strip').innerHTML = healthStrip(d) +
         `<p class="note">History before offset ${formatNumber(d.pruned_offset)} is pruned on this participant and cannot be read.</p>`;
     } catch (e) { $('#strip').innerHTML = unreachable(e); }

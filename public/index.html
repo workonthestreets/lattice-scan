@@ -26,6 +26,15 @@
     color: var(--signal); font-size: 1.05em; letter-spacing: -0.015em; }
   .page__sub { color: var(--bone-dim); font-size: 1.0625rem; margin: var(--space-4) 0 0;
     max-width: 68ch; }
+
+  /* Overview only: a centered, app-sized header rather than a landing-page hero. */
+  .page__head--center { max-width: 52ch; margin-left: auto; margin-right: auto;
+    text-align: center; }
+  .page__head--center .page__h { font-size: clamp(1.75rem, 3.2vw, 2.5rem); line-height: 1.04;
+    text-wrap: balance; }
+  .page__head--center .page__sub { max-width: 46ch; margin-left: auto; margin-right: auto;
+    font-size: 1rem; text-wrap: balance; }
+  .head-live { display: flex; justify-content: center; margin-bottom: var(--space-4); }
   .pid { font-family: var(--font-mono); font-size: 0.8rem; letter-spacing: 0; color: var(--mute);
     margin: var(--space-3) 0 0; word-break: break-all; cursor: pointer; }
 
@@ -119,8 +128,6 @@
   .auth__row { display: flex; gap: var(--space-3); }
   .auth__grow { flex: 1; }
   .auth__note { color: var(--mute); font-size: 0.875rem; margin: 0; max-width: 60ch; }
-  .head-row { display: flex; align-items: flex-end; justify-content: space-between;
-    gap: var(--space-5); flex-wrap: wrap; }
   .foot { border-top: 1px solid var(--border); padding-top: var(--space-6); padding-bottom: var(--space-6);
     color: var(--mute); font-size: 0.875rem; }
   select.input { height: 40px; padding: 0 12px; width: auto; max-width: 420px;

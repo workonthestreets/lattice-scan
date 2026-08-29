@@ -109,30 +109,32 @@ function authGate(e) {
 }
 
 function bindAuth() {
-  const f = document.getElementById('authform');
-  if (!f) return;
-  const msg = (t) => { const m = document.getElementById('authmsg'); if (m) m.textContent = t; };
-  f.addEventListener('submit', async (ev) => {
-    ev.preventDefault();
-    const cid = document.getElementById('cid').value.trim(), sec = document.getElementById('csec').value.trim();
-    if (!cid || !sec) { msg('Enter the client id and the client secret.'); return; }
-    const b = document.getElementById('mint'); b.disabled = true; msg('Asking the identity provider for a token');
-    try {
-      const r = await fetch('/auth/token', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ client_id: cid, client_secret: sec }) });
-      const body = await r.json().catch(() => null);
-      if (!r.ok || !body || !body.access_token) { msg((body && body.detail) || ('Sign-in failed (' + r.status + ')')); b.disabled = false; return; }
-      setToken(body.access_token);
-      route();
-    } catch (err) { msg('Could not reach the scanner: ' + err.message); b.disabled = false; }
+  document.querySelectorAll('form.auth:not([data-bound])').forEach((f) => {
+    f.dataset.bound = '1';
+    const field = (id) => f.querySelector('[id="' + id + '"]');
+    const msg = (t) => { const m = f.querySelector('.auth__note'); if (m) m.textContent = t; };
+    f.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const cid = field('cid').value.trim(), sec = field('csec').value.trim();
+      if (!cid || !sec) { msg('Enter the client id and the client secret.'); return; }
+      const b = field('mint'); b.disabled = true; msg('Asking the identity provider for a token');
+      try {
+        const r = await fetch('/auth/token', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ client_id: cid, client_secret: sec }) });
+        const body = await r.json().catch(() => null);
+        if (!r.ok || !body || !body.access_token) { msg((body && body.detail) || ('Sign-in failed (' + r.status + ')')); b.disabled = false; return; }
+        setToken(body.access_token);
+        route();
+      } catch (err) { msg('Could not reach the scanner: ' + err.message); b.disabled = false; }
+    });
+    const ut = field('usetok');
+    if (ut) ut.addEventListener('click', () => {
+      const t = field('tok').value.trim();
+      if (t.split('.').length !== 3) { msg('That is not a bearer token. A token has three dot-separated parts and starts with eyJ. If you have the client secret, use the form above.'); return; }
+      setToken(t); route();
+    });
+    const so = field('signout');
+    if (so) so.addEventListener('click', () => { setToken(''); route(); });
   });
-  const ut = document.getElementById('usetok');
-  if (ut) ut.addEventListener('click', () => {
-    const t = document.getElementById('tok').value.trim();
-    if (t.split('.').length !== 3) { msg('That is not a bearer token. A token has three dot-separated parts and starts with eyJ. If you have the client secret, use the form above.'); return; }
-    setToken(t); route();
-  });
-  const so = document.getElementById('signout');
-  if (so) so.addEventListener('click', () => { setToken(''); route(); });
 }
 
 async function paintWhoami() {
@@ -157,6 +159,15 @@ function unreachable(e) {
   if (gate) { setTimeout(bindAuth, 0); return gate; }
   return empty('API unreachable at ' + location.origin,
     'The scanner process is not answering on this origin. Start it and reload.');
+}
+
+// Paint an error into a container. A sign-in form already on screen is left alone while the
+// error is still an auth error, so a polling view never resets what the user is typing.
+function paintError(sel, e) {
+  const el = $(sel);
+  if (!el) return;
+  if (e && (e.status === 401 || e.status === 403) && el.querySelector('form.auth')) return;
+  el.innerHTML = unreachable(e);
 }
 
 /* ---------- routing ---------- */
@@ -304,7 +315,7 @@ async function renderOverview() {
       $('#boundary').textContent = d.boundary || '';
       $('#strip').innerHTML = healthStrip(d) +
         `<p class="note">History before offset ${formatNumber(d.pruned_offset)} is pruned on this participant and cannot be read.</p>`;
-    } catch (e) { $('#strip').innerHTML = unreachable(e); }
+    } catch (e) { paintError('#strip', e); }
   }
   async function pullUpdates() {
     try {
@@ -313,13 +324,13 @@ async function renderOverview() {
         ? tbl('cols-upd', [{ t: 'Offset' }, { t: 'Time' }, { t: 'Parties' }, { t: 'Events', r: 1 },
             { t: 'Activity' }], list.map(updateRow).join(''))
         : empty('No updates yet', 'The tail is attached but no update has arrived since it started.');
-    } catch (e) { $('#updates').innerHTML = unreachable(e); }
+    } catch (e) { paintError('#updates', e); }
   }
   await Promise.all([pullHealth(), pullUpdates()]);
   try {
     allTemplates = await api('/templates');
     $('#templates').innerHTML = templatesTable();
-  } catch (e) { $('#templates').innerHTML = unreachable(e); }
+  } catch (e) { paintError('#templates', e); }
 
   timers.push(setInterval(pullHealth, 2000));
   timers.push(setInterval(pullUpdates, 5000));

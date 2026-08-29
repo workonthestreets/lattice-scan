@@ -33,6 +33,16 @@ npm run measure                 # the numbers above, live
 sh scripts/killtest.sh          # kill -9, restart, resume, self-check
 ```
 
+## Who can read what
+
+The scanner has no users of its own. With `AUTH_MODE=ledger` (the default) every data route needs a bearer token for the participant, and the scanner asks the participant two questions about it: who is this (`GET /v2/authenticated-user`) and which parties may they read (`GET /v2/users/{id}/rights`). A token the participant rejects gets a 401 here; a party the token cannot read gets a 403 here; views that span every party (overview, templates, self-check) need `CanReadAsAnyParty`. The participant decides, the scanner only relays. `GET /health` stays open (counts, no ledger data). Paste a token into the dashboard's sign-in form; it is kept in the browser only. `AUTH_MODE=off` disables the gate for local development.
+
+```bash
+curl -s localhost:8787/parties/<party>/balances                              # 401: sign in
+curl -s -H 'authorization: Bearer garbage' localhost:8787/parties/<party>/balances   # 401: participant rejected this token
+curl -s -H "authorization: Bearer $TOKEN" localhost:8787/parties/<party>/balances    # 200, or 403 if the token cannot read that party
+```
+
 `FILTER_MODE=any` uses `filtersForAnyParty` (needs a token with `CanReadAsAnyParty`, which the hackathon client has). If the token is party-scoped, set `FILTER_MODE=parties` and `PARTIES=<comma separated party ids>`.
 
 ## API

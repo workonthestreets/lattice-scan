@@ -58,6 +58,19 @@
   a.tbl__row:hover { background: var(--surface-raised); }
   .tbl__row > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+  .tabs { display: flex; gap: var(--space-6); border-bottom: 1px solid var(--border); }
+  .tab { appearance: none; -webkit-appearance: none; background: none; border: 0; margin: 0;
+    padding: 0 0 12px; cursor: pointer; position: relative; line-height: 1.2;
+    font-family: var(--font-display); font-weight: 600; font-size: 1.25rem; letter-spacing: -0.025em;
+    color: var(--mute); transition: color var(--duration-snap) var(--ease-out); }
+  .tab:hover { color: var(--bone-dim); }
+  .tab[aria-selected="true"] { color: var(--bone); }
+  .tab[aria-selected="true"]::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px;
+    height: 2px; background: var(--signal); }
+  .tab:focus-visible { border-radius: var(--radius-1); }
+  .panel[hidden] { display: none; }
+  .panel .tbl, .panel .empty { border-top: 0; }
+
   .cols-upd { grid-template-columns: 116px 92px minmax(0,1.3fr) 72px minmax(0,1.6fr); }
   .cols-tpl { grid-template-columns: minmax(0,1fr) 110px 110px; }
   .cols-bal { grid-template-columns: minmax(0,1fr) 1fr 1fr 1fr 90px minmax(0,1.2fr); }
@@ -88,6 +101,13 @@
   .nav__search { width: 340px; max-width: 38vw; font-family: var(--font-mono); font-size: 0.75rem;
     letter-spacing: 0; padding: 9px 12px; }
   .nav__mid { display: inline-flex; align-items: center; gap: var(--space-6); }
+  .nav__who { background: transparent; border: 0; color: var(--mute); font-family: var(--font-mono);
+    font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; padding: 0 var(--space-4);
+    white-space: nowrap; max-width: 30ch; overflow: hidden; text-overflow: ellipsis; }
+  .nav__who:hover { color: var(--bone); }
+  .auth { display: grid; gap: var(--space-3); max-width: 560px; margin-top: var(--space-5); }
+  .auth .input { font-family: var(--font-mono); font-size: 0.8rem; }
+  .auth__row { display: flex; gap: var(--space-3); }
   .head-row { display: flex; align-items: flex-end; justify-content: space-between;
     gap: var(--space-5); flex-wrap: wrap; }
   .foot { border-top: 1px solid var(--border); padding-top: var(--space-6); padding-bottom: var(--space-6);
@@ -119,6 +139,7 @@
     <li><a class="nav__link" data-tab="party" href="#/party">Party</a></li>
     <li><a class="nav__link" data-tab="verify" href="#/verify">Verify</a></li>
   </ul>
+  <button class="nav__who" id="who" type="button" title="Click to forget the token">Not signed in</button>
   <label class="sr-only" for="q">Party id or contract id</label>
   <input class="input nav__search" id="q" autocomplete="off" spellcheck="false"
     placeholder="Party id or contract id">

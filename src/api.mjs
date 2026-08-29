@@ -94,7 +94,7 @@ export async function health() {
     auth_mode: config.authMode,
     started_at: getMeta("started_at") || null,
     uptime_s: Math.round(process.uptime()),
-    boundary: "Contracts where a party hosted on this participant is a stakeholder. Nothing from other validators. History before the pruned offset is not reconstructable.",
+    boundary: "Canton Network, one participant. Contracts where a party hosted here is a stakeholder. Nothing from other validators. History before the pruned offset is not reconstructable.",
   };
 }
 

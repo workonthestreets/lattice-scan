@@ -262,7 +262,7 @@ function templatesTable() {
 
 async function renderOverview() {
   head.innerHTML = `<div class="head-row">
-      <h1 class="page__h">One node. Its <em>honest</em> view.</h1>
+      <h1 class="page__h">One Canton node. Its <em>honest</em> view.</h1>
       <span id="live"></span>
     </div><p class="page__sub" id="boundary"></p>`;
   view.innerHTML = `<div id="strip">${loading()}</div>

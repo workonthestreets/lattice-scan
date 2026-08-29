@@ -35,7 +35,10 @@ const Q = {
   verifyRuns: db.prepare("SELECT * FROM verify_runs ORDER BY id DESC LIMIT 20"),
   verifyFindings: db.prepare("SELECT * FROM verify_findings WHERE run_id = ? LIMIT 200"),
   updatesLast5: db.prepare("SELECT count(DISTINCT update_id) AS n FROM events WHERE record_time >= ?"),
-  topParties: db.prepare(`SELECT owner AS party, instrument, count(*) AS utxo_count FROM holdings WHERE archived_offset IS NULL GROUP BY owner, instrument ORDER BY utxo_count DESC LIMIT ?`),
+  topParties: db.prepare(`SELECT owner AS party, instrument, count(*) AS utxo_count, sum(CAST(amount AS REAL)) AS approx_balance
+    FROM holdings WHERE archived_offset IS NULL AND (? = '' OR instrument = ?)
+    GROUP BY owner, instrument HAVING (? = 0 OR count(*) <= ?)
+    ORDER BY CASE WHEN ? = 'balance' THEN sum(CAST(amount AS REAL)) ELSE count(*) END DESC LIMIT ?`),
   searchParties: db.prepare("SELECT DISTINCT party FROM stakeholders WHERE party LIKE ? LIMIT 20"),
   activityKinds: db.prepare("SELECT kind, count(*) AS n FROM activity GROUP BY kind ORDER BY n DESC"),
 };
@@ -134,7 +137,10 @@ async function route(req, res) {
     return fs.createReadStream(f).pipe(res);
   }
   if (p === "/health") return json(res, 200, await health());
-  if (p === "/parties/top") return json(res, 200, Q.topParties.all(lim));
+  if (p === "/parties/top") {
+    const inst = q.get("instrument") || "", mx = Number(q.get("max_utxos") || 0), ord = q.get("order") === "balance" ? "balance" : "utxos";
+    return json(res, 200, Q.topParties.all(inst, inst, mx, mx, ord, lim));
+  }
   if (seg[0] === "parties" && seg.length >= 2) {
     const party = seg[1];
     if (seg[2] === undefined || seg[2] === "balances") { const b = await balances(party); return b ? json(res, 200, b) : notFound(res, "party not in this participant's index (boundary: only parties hosted here or transacting with them)"); }

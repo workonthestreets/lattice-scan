@@ -5,7 +5,9 @@ set -e
 cd "$(dirname "$0")/.."
 PORT=${PORT:-8787}
 # The API is gated (AUTH_MODE=ledger): mint the scanner's own participant token for curl.
-TOKEN=${TOKEN:-$(node --no-warnings=ExperimentalWarning -e 'import("./src/token.mjs").then(async m => process.stdout.write(await m.token()))')}
+# console.log is silenced: the token module logs "token: minted" to stdout, and a log line captured into
+# $TOKEN puts a newline in the Authorization header, which Node's HTTP parser rejects with a bare 400.
+TOKEN=${TOKEN:-$(node --no-warnings=ExperimentalWarning -e 'console.log = () => {}; import("./src/token.mjs").then(async m => process.stdout.write(await m.token()))')}
 AUTH="authorization: Bearer $TOKEN"
 PID=$(cat scanner.pid 2>/dev/null || pgrep -f "src/index.mjs --run" | head -1)
 echo "before: $(curl -s localhost:$PORT/health | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const h=JSON.parse(s);console.log("cursor",h.cursor_offset,"contracts",h.contracts_total,"events",h.events_indexed)})')"

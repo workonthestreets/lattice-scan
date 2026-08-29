@@ -92,7 +92,7 @@ function tokenHelp() {
   const curl = 'curl -s -X POST ' + url + ' \\\n  -d grant_type=client_credentials -d client_id=hackathon -d client_secret=$CLIENT_SECRET \\\n  | jq -r .access_token';
   return `<aside class="gate__aside"><h3>Where the token comes from</h3>
     <p>The scanner has no accounts of its own. The participant's identity provider (Keycloak) issues a bearer token for a client id and secret, and the participant decides what that token may read. The hackathon client is <span class="num">hackathon</span>, its secret is in the organisers' message, and it may read every party; a narrower client sees only its own parties.</p>
-    <p>Sign in exchanges the secret for a 15-minute token and keeps neither; the token stays in this browser. To mint one yourself and paste it into the token field:</p>
+    <p>Sign in exchanges the secret for a 15-minute token and keeps neither; the token stays in this browser. To mint one yourself, export the secret as <span class="num">CLIENT_SECRET</span> in your shell first, then paste the result into the token field:</p>
     <pre class="code">${h(curl)}</pre></aside>`;
 }
 
@@ -102,18 +102,19 @@ function authGate(e) {
   return `<div class="empty gate"><div class="gate__main"><h3>${e.status === 401 ? 'Sign in to the participant' : 'Not allowed for this token'}</h3>
     <p>${h(detail)}</p>
     <form class="auth" id="authform">
+      <div class="gate__demo" data-demo></div>
       <label class="card__label" for="cid">Client id and secret from the identity provider</label>
       <div class="auth__row">
         <input class="input auth__id" id="cid" autocomplete="off" spellcheck="false" placeholder="client id" value="hackathon">
         <input class="input auth__grow" id="csec" type="password" autocomplete="off" placeholder="client secret">
       </div>
-      <div class="auth__row"><button class="btn btn--primary" type="submit" id="mint">Sign in</button>
-      ${token() ? '<button class="btn btn--ghost" type="button" id="signout">Forget token</button>' : ''}</div>
+      <div class="auth__row"><button class="btn btn-primary" type="submit" id="mint">Sign in</button>
+      ${token() ? '<button class="btn btn-ghost" type="button" id="signout">Forget token</button>' : ''}</div>
       <p class="auth__note" id="authmsg">The scanner exchanges the secret for a 15-minute token at the identity provider and keeps neither. The token stays in this browser.</p>
       <label class="card__label" for="tok">Or paste a bearer token you already have</label>
       <div class="auth__row">
         <input class="input auth__grow" id="tok" type="password" autocomplete="off" placeholder="eyJhbGciOi...">
-        <button class="btn btn--ghost" type="button" id="usetok">Use token</button>
+        <button class="btn btn-ghost" type="button" id="usetok">Use token</button>
       </div>
     </form></div>${tokenHelp()}</div>`;
 }
@@ -145,6 +146,33 @@ function bindAuth() {
     const so = field('signout');
     if (so) so.addEventListener('click', () => { setToken(''); route(); });
   });
+  document.querySelectorAll('[data-demo]:not([data-bound])').forEach(async (slot) => {
+    slot.dataset.bound = '1';
+    if (!(await demoLoginEnabled())) return;
+    const form = slot.closest('form');
+    slot.innerHTML = `<div class="auth__row"><button class="btn btn-primary" type="button">Use the hackathon credentials</button></div>
+      <p class="auth__note">One click: the scanner mints a token with the client id and secret configured on it (DEMO_LOGIN=1) and signs you in. Anyone who can reach this page can do the same while that switch is on.</p>
+      <p class="card__label" style="margin-top:var(--space-2)">Or sign in with your own</p>`;
+    const mint = form && form.querySelector('[id="mint"]');
+    if (mint) mint.className = 'btn btn-ghost'; // the one-click button is now the primary action
+    const b = slot.querySelector('button'), msg = (t) => { const m = slot.querySelector('.auth__note'); if (m) m.textContent = t; };
+    b.addEventListener('click', async () => {
+      b.disabled = true; msg('Asking the identity provider for a token');
+      try {
+        const r = await fetch('/auth/token/demo', { method: 'POST' });
+        const body = await r.json().catch(() => null);
+        if (!r.ok || !body || !body.access_token) { msg((body && body.detail) || ('Sign-in failed (' + r.status + ')')); b.disabled = false; return; }
+        setToken(body.access_token);
+        route();
+      } catch (err) { msg('Could not reach the scanner: ' + err.message); b.disabled = false; }
+    });
+  });
+}
+
+let demoLoginFlag = null; // null until /health has answered once
+function demoLoginEnabled() {
+  if (demoLoginFlag !== null) return Promise.resolve(demoLoginFlag);
+  return api('/health').then((d) => (demoLoginFlag = !!d.demo_login)).catch(() => false);
 }
 
 async function paintWhoami() {

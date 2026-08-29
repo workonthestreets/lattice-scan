@@ -4,7 +4,7 @@ export function setTestEnv(mock, overrides = {}) {
   Object.assign(process.env, {
     LEDGER_HTTP: mock.url, LEDGER_WS: mock.wsUrl, IDP_TOKEN_URL: mock.url + "/token",
     CLIENT_ID: "test-client", CLIENT_SECRET: "test-secret", SCAN_URL: mock.url,
-    DB_PATH: ":memory:", PORT: "0", FILTER_MODE: "any", AUTH_MODE: "off", PARTIES: "",
+    DB_PATH: ":memory:", PORT: "0", FILTER_MODE: "any", AUTH_MODE: "off", DEMO_LOGIN: "0", PARTIES: "",
     VERIFY_INTERVAL_SEC: "0", SOCKET_RECYCLE_SEC: "600", BATCH_SIZE: "2", WATCHDOG_SEC: "30",
     ...overrides,
   });

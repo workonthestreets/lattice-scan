@@ -92,6 +92,7 @@ export async function health() {
     verify: verifyState.last ? { at_offset: verifyState.last.at_offset, only_in_ledger: verifyState.last.only_in_ledger, only_in_mirror: verifyState.last.only_in_mirror, duration_ms: verifyState.last.duration_ms } : null,
     filter_mode: config.filterMode,
     auth_mode: config.authMode,
+    demo_login: config.demoLogin,
     started_at: getMeta("started_at") || null,
     uptime_s: Math.round(process.uptime()),
     boundary: "Canton Network, one participant. Contracts where a party hosted here is a stakeholder. Nothing from other validators. History before the pruned offset is not reconstructable.",
@@ -126,6 +127,17 @@ const notFound = (res, detail) => json(res, 404, { error: "not_found", detail })
 const STATIC = { "/": "index.html", "/index.html": "index.html", "/system.css": "system.css", "/app.js": "app.js", "/hero-wireframe.webp": "hero-wireframe.webp", "/favicon.svg": "favicon.svg" };
 const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".webp": "image/webp", ".svg": "image/svg+xml" };
 
+// Client-credentials exchange at the participant's identity provider. Returns the token; keeps nothing.
+async function exchangeCredentials(res, clientId, clientSecret) {
+  try {
+    const r = await fetch(config.idpTokenUrl, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "client_credentials", client_id: clientId, client_secret: clientSecret }), signal: AbortSignal.timeout(15000) });
+    const t = await r.json().catch(() => ({}));
+    if (!r.ok) return json(res, 401, { error: "unauthorized", detail: `The identity provider rejected these credentials${t.error_description ? ": " + t.error_description : ""}.` });
+    return json(res, 200, { access_token: t.access_token, expires_in: t.expires_in, token_type: t.token_type });
+  } catch (e) { return json(res, 502, { error: "idp_unreachable", detail: `Could not reach the identity provider: ${e.name === "TimeoutError" ? "timeout" : e.message}` }); }
+}
+
 async function route(req, res) {
   const u = new URL(req.url, "http://x");
   const p = u.pathname;
@@ -148,13 +160,15 @@ async function route(req, res) {
     let creds = {}; try { creds = JSON.parse(body || "{}"); } catch {}
     const clientId = String(creds.client_id || "").trim(), clientSecret = String(creds.client_secret || "").trim();
     if (!clientId || !clientSecret) return json(res, 400, { error: "bad_request", detail: "client_id and client_secret are required" });
-    try {
-      const r = await fetch(config.idpTokenUrl, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ grant_type: "client_credentials", client_id: clientId, client_secret: clientSecret }), signal: AbortSignal.timeout(15000) });
-      const t = await r.json().catch(() => ({}));
-      if (!r.ok) return json(res, 401, { error: "unauthorized", detail: `The identity provider rejected these credentials${t.error_description ? ": " + t.error_description : ""}.` });
-      return json(res, 200, { access_token: t.access_token, expires_in: t.expires_in, token_type: t.token_type });
-    } catch (e) { return json(res, 502, { error: "idp_unreachable", detail: `Could not reach the identity provider: ${e.name === "TimeoutError" ? "timeout" : e.message}` }); }
+    return exchangeCredentials(res, clientId, clientSecret);
+  }
+  if (p === "/auth/token/demo" && req.method === "POST") {
+    // Demo-only: mint with the credentials configured on THIS scanner (CLIENT_ID/CLIENT_SECRET), so a presenter
+    // signs in with one click. Anyone who can reach the page gets the operator's token while this is on,
+    // hence 404 unless DEMO_LOGIN=1.
+    if (!config.demoLogin) return notFound(res, "demo login is off on this scanner (DEMO_LOGIN=1 enables it)");
+    if (!config.clientSecret) return json(res, 500, { error: "misconfigured", detail: "CLIENT_SECRET is not set on the scanner" });
+    return exchangeCredentials(res, config.clientId, config.clientSecret);
   }
 
   // Everything below is ledger data: the participant decides who may read what.

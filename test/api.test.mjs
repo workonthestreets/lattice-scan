@@ -96,6 +96,20 @@ describe("authorization gate (AUTH_MODE=ledger)", () => {
     const svc = await api.get("/auth/whoami");
     assert.equal(svc.body.any_party, true); assert.equal(svc.body.user, "validator-backend");
   });
+  test("/auth/token/demo is 404 until DEMO_LOGIN=1, then mints with the scanner's own credentials", async () => {
+    assert.equal((await api.get("/health")).body.demo_login, false);
+    const off = await api.post("/auth/token/demo", null);
+    assert.equal(off.status, 404); assert.match(off.body.detail, /DEMO_LOGIN=1/);
+    app.config.demoLogin = true;
+    try {
+      assert.equal((await api.get("/health")).body.demo_login, true);
+      const mints = mock.ledger.tokenMints;
+      const on = await api.post("/auth/token/demo", null);
+      assert.equal(on.status, 200); assert.equal(on.body.access_token, SERVICE_TOKEN); assert.equal(mock.ledger.tokenMints, mints + 1);
+      const me = await api.get("/auth/whoami", on.body.access_token);
+      assert.equal(me.body.any_party, true);
+    } finally { app.config.demoLogin = false; }
+  });
   test("/search only returns parties the token may read", async () => {
     assert.deepEqual((await api.get("/search?q=1220", ALICE_TOKEN)).body, [ALICE]);
     assert.deepEqual((await api.get("/search?q=1220")).body.sort(), [DSO, ALICE, BOB].sort());

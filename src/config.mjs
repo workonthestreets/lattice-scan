@@ -29,6 +29,7 @@ export const config = {
   port: Number(env("PORT", "8787")),
   filterMode: env("FILTER_MODE", "any"),               // any | parties
   authMode: env("AUTH_MODE", "ledger"),                // ledger | off
+  demoLogin: env("DEMO_LOGIN", "0") === "1",           // one-click sign-in with this scanner's own credentials (demo only)
   parties: env("PARTIES", "").split(",").map(s => s.trim()).filter(Boolean),
   verifyIntervalSec: Number(env("VERIFY_INTERVAL_SEC", "0")),
   socketRecycleSec: Number(env("SOCKET_RECYCLE_SEC", "600")),

@@ -106,18 +106,24 @@ async function balances(party) {
   const agg = new Map();
   for (const r of rows) {
     const k = r.instrument;
-    const a = agg.get(k) || { instrument: k, admin: r.admin, balance: 0n, locked: 0n, utxo_count: 0, locked_count: 0, effective: 0n, has_effective: false };
+    const a = agg.get(k) || { instrument: k, admin: r.admin, balance: 0n, locked: 0n, utxo_count: 0, locked_count: 0, effective: 0n, has_effective: false, effective_uncovered: 0 };
     const u = toUnits(r.amount);
     a.balance += u; a.utxo_count++;
     if (r.locked) { a.locked += u; a.locked_count++; }
-    if (k === "Amulet" && r.round !== null && r.rate) { const e = effectiveAmount(r.amount, r.round, r.rate, round); if (e !== null) { a.effective += toUnits(e); a.has_effective = true; } }
+    if (k === "Amulet") {
+      // A UTXO without round/rate (or no current round yet) cannot be decayed: it counts at face value so the
+      // total stays a total, and effective_uncovered_utxos says how many rows were taken at face value.
+      const e = r.round !== null && r.rate ? effectiveAmount(r.amount, r.round, r.rate, round) : null;
+      if (e !== null) { a.effective += toUnits(e); a.has_effective = true; } else { a.effective += u; a.effective_uncovered++; }
+    }
     agg.set(k, a);
   }
   return {
     party, as_of_offset: getMetaInt("offset", null), current_round: round,
     balances: [...agg.values()].map(a => ({ instrument: a.instrument, admin: a.admin, balance: fromUnits(a.balance), locked: fromUnits(a.locked),
       available: fromUnits(a.balance - a.locked), utxo_count: a.utxo_count, locked_count: a.locked_count,
-      effective_after_holding_fees: a.has_effective ? fromUnits(a.effective) : null })),
+      effective_after_holding_fees: a.has_effective ? fromUnits(a.effective) : null,
+      effective_uncovered_utxos: a.has_effective ? a.effective_uncovered : null })),
   };
 }
 

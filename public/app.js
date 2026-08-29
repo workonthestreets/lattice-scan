@@ -53,6 +53,13 @@ function clock(ts) {
   return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(11, 19);
 }
 
+// Date and time (UTC) for timestamps where the day matters, e.g. a lock that expires next week.
+function when(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 16).replace('T', ' ');
+}
+
 function copyCell(full, text, cls) {
   return `<span class="${cls || 'num'} copy" data-copy="${h(full)}" title="${h(full)}">${h(text)}</span>`;
 }
@@ -222,21 +229,36 @@ function setTab(name) {
 function parseRoute() {
   const raw = location.hash.replace(/^#\/?/, '');
   const [seg, ...rest] = raw.split('/');
-  return { seg, arg: decodeURIComponent(rest.join('/') || '') };
+  const joined = rest.join('/') || '';
+  let arg;
+  try { arg = decodeURIComponent(joined); } catch { arg = joined; } // a bare % is not a URI escape; use it as typed
+  return { seg, arg };
 }
 
+// Every navigation gets a generation number. A renderer captures it at the start and checks
+// alive() after each await: a page whose fetches finish after the user has moved on paints nothing.
+let gen = 0;
+const alive = (g) => g === gen;
+
 async function route() {
+  const g = ++gen;
   stopTimers();
   const { seg, arg } = parseRoute();
   window.scrollTo(0, 0);
   lastAuthError = null;
   paintWhoami();
-  if (seg === 'party' && /\/history$/.test(arg)) { setTab(''); return renderPartyHistory(arg.replace(/\/history$/, '')); }
-  if (seg === 'party' && arg) { setTab(''); return renderParty(arg); }
-  if (seg === 'contract' && arg) { setTab(''); return renderContract(arg); }
-  if (seg === 'verify') { setTab('verify'); return renderVerify(); }
-  setTab('overview');
-  return renderOverview();
+  try {
+    if (seg === 'party' && /\/history$/.test(arg)) { setTab(''); return await renderPartyHistory(arg.replace(/\/history$/, ''), g); }
+    if (seg === 'party' && arg) { setTab(''); return await renderParty(arg, g); }
+    if (seg === 'contract' && arg) { setTab(''); return await renderContract(arg, g); }
+    if (seg === 'search' && arg) { setTab(''); return await renderSearch(arg, g); }
+    if (seg === 'verify') { setTab('verify'); return await renderVerify(g); }
+    setTab('overview');
+    return await renderOverview(g);
+  } catch (e) {
+    if (!alive(g)) return;
+    view.innerHTML = empty('This page failed to render', String(e && e.message || e));
+  }
 }
 
 window.addEventListener('hashchange', route);
@@ -260,14 +282,15 @@ function healthStrip(d) {
   return `<div class="strip">
     ${card('Cursor offset', formatNumber(d.cursor_offset), null,
       `Ledger end ${formatNumber(d.ledger_end)}, a gap of ${formatNumber(d.gap_offsets)} offsets.`)}
-    ${card('Lag', Number(d.lag_seconds).toFixed(1), 's',
-      'Now minus the record time of the last update ingested. Reference scanner reports about 2.7 s.')}
+    ${d.lag_seconds == null
+      ? card('Lag', 'unknown', null, 'No update has been ingested since this process started, so there is no record time to measure against.')
+      : card('Lag', Number(d.lag_seconds).toFixed(1), 's', 'Now minus the record time of the last update ingested. Reference scanner reports about 2.7 s.')}
     ${card('Contracts active', formatNumber(d.contracts_active), null,
       `${formatNumber(d.contracts_total)} contracts total, including archived.`)}
     ${card('Holdings active', formatNumber(d.holdings_active), null,
       'Unarchived token holding contracts in the mirror.')}
-    ${card('Updates per minute', Number(d.updates_per_min).toFixed(1), null,
-      `${formatNumber(d.updates_indexed)} updates applied since the tail attached.`)}
+    ${card('Updates per minute', d.updates_per_min == null ? 'unknown' : Number(d.updates_per_min).toFixed(1), null,
+      `${formatNumber(d.tail ? d.tail.updates_applied : null)} updates applied since the tail attached; ${formatNumber(d.updates_indexed)} updates indexed in all, including history backfill.`)}
     ${card('Bootstrap', formatNumber(d.bootstrap_contracts), 'in ' + boot,
       `Active set read at offset ${formatNumber(d.snapshot_offset)}.`)}
     ${card('Parties seen', formatNumber(d.parties_seen), null,
@@ -290,7 +313,7 @@ function updateRow(u) {
                   : '<div class="tbl__row cols-upd">';
   return tag +
     `<span class="num">${formatNumber(u.offset)}</span>` +
-    `<span class="num num--dim">${h(clock(u.record_time))}</span>` +
+    `<span class="num num--dim" title="${h(u.record_time || '')}">${h(clock(u.record_time))}</span>` +
     `<span class="num" title="${h(ps.join('\n'))}">${h(pcell)}</span>` +
     `<span class="num num--r">${formatNumber(u.n)}</span>` +
     `<span class="name">${h(acts)}</span>` +
@@ -337,7 +360,7 @@ function templatesTable() {
   return tbl('cols-tpl', [{ t: 'Template' }, { t: 'Active', r: 1 }, { t: 'Total', r: 1 }], rows) + more;
 }
 
-async function renderOverview() {
+async function renderOverview(g) {
   head.innerHTML = `<div class="head-row">
       <h1 class="page__h">One Canton node. Its <em>honest</em> view.</h1>
       <span id="live"></span>
@@ -348,27 +371,32 @@ async function renderOverview() {
   async function pullHealth() {
     try {
       const d = await api('/health');
+      if (!alive(g)) return;
       $('#live').innerHTML = liveStatus(d.tail);
       $('#boundary').textContent = d.boundary || '';
       $('#strip').innerHTML = healthStrip(d) +
         `<p class="note">History before offset ${formatNumber(d.pruned_offset)} is pruned on this participant and cannot be read.</p>`;
-    } catch (e) { paintError('#strip', e); }
+    } catch (e) { if (alive(g)) paintError('#strip', e); }
   }
   async function pullUpdates() {
     try {
       const list = await api('/updates/recent?limit=50');
+      if (!alive(g)) return;
       $('#updates').innerHTML = list.length
         ? tbl('cols-upd', [{ t: 'Offset' }, { t: 'Time' }, { t: 'Parties' }, { t: 'Events', r: 1 },
             { t: 'Activity' }], list.map(updateRow).join(''))
         : empty('No updates yet', 'The tail is attached but no update has arrived since it started.');
-    } catch (e) { paintError('#updates', e); }
+    } catch (e) { if (alive(g)) paintError('#updates', e); }
   }
   await Promise.all([pullHealth(), pullUpdates()]);
   try {
-    allTemplates = await api('/templates');
+    const list = await api('/templates');
+    if (!alive(g)) return;
+    allTemplates = list;
     $('#templates').innerHTML = templatesTable();
-  } catch (e) { paintError('#templates', e); }
+  } catch (e) { if (alive(g)) paintError('#templates', e); }
 
+  if (!alive(g)) return; // navigated away while loading: the new page must not inherit these pollers
   timers.push(setInterval(pullHealth, 2000));
   timers.push(setInterval(pullUpdates, 5000));
 }
@@ -388,14 +416,22 @@ function balancesTable(b) {
     `${x.effective_after_holding_fees == null ? '' : amt(x.effective_after_holding_fees)}</span></div>`).join('');
   const cols = [{ t: 'Instrument' }, { t: 'Balance', r: 1 }, { t: 'Locked', r: 1 },
     { t: 'Available', r: 1 }, { t: 'UTXOs', r: 1 }, { t: 'After fees', r: 1 }];
+  const uncovered = b.balances.reduce((n, x) => n + (x.effective_uncovered_utxos || 0), 0);
   const note = anyEff
-    ? '<p class="note">After fees is Canton Coin after accrued holding fees. The ledger reports the face value.</p>'
+    ? `<p class="note">After fees is Canton Coin after accrued holding fees. The ledger reports the face value.${uncovered
+        ? ` ${formatNumber(uncovered)} UTXO${uncovered === 1 ? '' : 's'} without a fee rate ${uncovered === 1 ? 'is' : 'are'} counted at face value.` : ''}</p>`
     : '';
   return `<p class="note" style="margin-bottom:var(--space-4)">As of offset ${formatNumber(b.as_of_offset)}, round ${formatNumber(b.current_round)}.</p>` +
     tbl('cols-bal', cols, rows) + note;
 }
 
-function holdingsTable(list) {
+// "Showing the newest N of M" when the API page is shorter than the party's real count.
+function truncated(shown, total, noun) {
+  return total != null && total > shown
+    ? `<p class="note">Showing the newest ${formatNumber(shown)} of ${formatNumber(total)} ${noun}.</p>` : '';
+}
+
+function holdingsTable(list, total) {
   if (!list.length) return empty('No holdings', 'This party is a stakeholder on no unarchived holding contract.');
   const rows = list.map((x) =>
     `<a class="tbl__row cols-hold" href="#/contract/${encodeURIComponent(x.contract_id)}">` +
@@ -403,18 +439,19 @@ function holdingsTable(list) {
     `<span class="name">${h(x.instrument)}</span>` +
     `<span class="num num--r" title="${h(x.amount)}">${amt(x.amount)}</span>` +
     `<span class="num ${x.locked ? '' : 'num--dim'}">${x.locked ? 'locked' : 'free'}</span>` +
-    `<span class="num num--dim">${h(x.lock_expires_at ? clock(x.lock_expires_at) : '')}</span>` +
+    `<span class="num num--dim" title="${h(x.lock_expires_at || '')}">${h(when(x.lock_expires_at))}</span>` +
     `<span class="num num--r num--dim">${formatNumber(x.round)}</span>` +
     `<span class="num num--r num--dim">${formatNumber(x.created_offset)}</span></a>`).join('');
   return tbl('cols-hold', [{ t: 'Contract' }, { t: 'Instrument' }, { t: 'Amount', r: 1 },
-    { t: 'Lock' }, { t: 'Lock expiry' }, { t: 'Round', r: 1 }, { t: 'Created offset', r: 1 }], rows);
+    { t: 'Lock' }, { t: 'Lock expiry (UTC)' }, { t: 'Round', r: 1 }, { t: 'Created offset', r: 1 }], rows) +
+    truncated(list.length, total, 'holdings');
 }
 
 function historyTable(list) {
   if (!list.length) return empty('No classified history',
     'No update in the indexed window moved value for this party. Readable history starts at the pruning boundary.');
   const rows = list.map((x) =>
-    `<div class="tbl__row cols-hist"><span class="num num--dim">${h(clock(x.record_time))}</span>` +
+    `<div class="tbl__row cols-hist"><span class="num num--dim" title="${h(x.record_time || '')}">${h(clock(x.record_time))}</span>` +
     `<span class="name">${h(x.kind.replace(/_/g, ' '))}</span>` +
     `<span class="num num--r" title="${h(x.amount || '')}">${amt(x.amount)}</span>` +
     `<span class="num">${h(x.instrument || '')}</span>` +
@@ -424,7 +461,7 @@ function historyTable(list) {
     { t: 'Counterparty' }, { t: 'Confidence' }], rows);
 }
 
-function contractsTable(list) {
+function contractsTable(list, total) {
   if (!list.length) return empty('No active contracts', 'This party is a stakeholder on nothing the mirror still holds as active.');
   const rows = list.map((x) =>
     `<a class="tbl__row cols-con" href="#/contract/${encodeURIComponent(x.contract_id)}">` +
@@ -433,10 +470,10 @@ function contractsTable(list) {
     `<span class="num num--r num--dim">${formatNumber(x.created_offset)}</span>` +
     `<span class="num num--r num--dim">${x.archived_offset == null ? 'active' : formatNumber(x.archived_offset)}</span></a>`).join('');
   return tbl('cols-con', [{ t: 'Template' }, { t: 'Role' }, { t: 'Created offset', r: 1 },
-    { t: 'Archived offset', r: 1 }], rows);
+    { t: 'Archived offset', r: 1 }], rows) + truncated(list.length, total, 'active contracts');
 }
 
-async function renderParty(id) {
+async function renderParty(id, g) {
   head.innerHTML = `<h1 class="page__h">What <em>${h(hintOf(id))}</em> holds</h1>` +
     `<p class="pid copy" data-copy="${h(id)}" title="Click to copy">${h(id)}</p>`;
   view.innerHTML = loading();
@@ -445,6 +482,7 @@ async function renderParty(id) {
   try {
     bal = await api(`/parties/${encodeURIComponent(id)}/balances`);
   } catch (e) {
+    if (!alive(g)) return;
     if (e.status === 404) {
       view.innerHTML = empty('Not in this index',
         (e.body && e.body.detail) || 'This participant holds nothing for that party.');
@@ -453,6 +491,7 @@ async function renderParty(id) {
     view.innerHTML = unreachable(e);
     return;
   }
+  if (!alive(g)) return;
 
   view.innerHTML = `<section id="s-bal">${balancesTable(bal)}</section>
     <section class="sec"><div class="sec__head"><h2 class="sec__h">Holdings</h2></div>
@@ -464,26 +503,39 @@ async function renderParty(id) {
       <select class="input" id="tpl-filter" aria-label="Filter contracts by template"><option value="">All templates</option></select></div>
       <div id="s-con">${loading()}</div></section>`;
 
+  const PAGE = 200;
   const P = (p) => api(p).catch(() => null);
+  const base = `/parties/${encodeURIComponent(id)}`;
+  const contractsUrl = (qname) => `${base}/contracts?active=1&limit=${PAGE}${qname ? '&qname=' + encodeURIComponent(qname) : ''}`;
   const [hold, hist, cons, tpls] = await Promise.all([
-    P(`/parties/${encodeURIComponent(id)}/holdings?limit=200`),
-    P(`/parties/${encodeURIComponent(id)}/history?limit=100`),
-    P(`/parties/${encodeURIComponent(id)}/contracts?active=1&limit=200`),
-    P(`/parties/${encodeURIComponent(id)}/templates`)
+    P(`${base}/holdings?limit=${PAGE}`),
+    P(`${base}/history?limit=100`),
+    P(contractsUrl('')),
+    P(`${base}/templates`)
   ]);
+  if (!alive(g)) return;
 
-  $('#s-hold').innerHTML = hold ? holdingsTable(hold) : unreachable();
+  // Real totals come from the unpaged aggregates: balances count every active UTXO, templates every active contract.
+  const holdingsTotal = bal.balances.reduce((n, x) => n + (x.utxo_count || 0), 0);
+  const activeOf = (qname) => tpls ? tpls.filter((t) => !qname || t.qname === qname).reduce((n, t) => n + Number(t.active || 0), 0) : null;
+
+  $('#s-hold').innerHTML = hold ? holdingsTable(hold, holdingsTotal) : unreachable();
   $('#s-hist').innerHTML = hist ? historyTable(hist.classified || []) : unreachable();
+  $('#s-con').innerHTML = cons ? contractsTable(cons, activeOf('')) : unreachable();
 
-  const all = cons || [];
-  $('#s-con').innerHTML = cons ? contractsTable(all) : unreachable();
   const sel = $('#tpl-filter');
   if (sel && tpls) {
     sel.innerHTML = '<option value="">All templates</option>' + tpls.map((t) =>
       `<option value="${h(t.qname)}">${h(t.qname)} (${formatNumber(t.active)})</option>`).join('');
-    sel.addEventListener('change', () => {
-      const q = sel.value;
-      $('#s-con').innerHTML = contractsTable(q ? all.filter((c) => c.qname === q) : all);
+    // Re-query the API for the chosen template: filtering the 200-row page would hide everything past it.
+    sel.addEventListener('change', async () => {
+      const qname = sel.value;
+      $('#s-con').innerHTML = loading();
+      try {
+        const rows = await api(contractsUrl(qname));
+        if (!alive(g) || sel.value !== qname) return;
+        $('#s-con').innerHTML = contractsTable(rows, activeOf(qname));
+      } catch (e) { if (alive(g)) paintError('#s-con', e); }
     });
   }
 }
@@ -511,7 +563,7 @@ function eventRows(list) {
     `<span class="num num--r num--dim">${formatNumber(x.offset)}</span></a>`).join('');
 }
 
-async function renderPartyHistory(id) {
+async function renderPartyHistory(id, g) {
   const PAGE = 200;
   head.innerHTML = `<h1 class="page__h">Everything <em>${h(hintOf(id))}</em> moved</h1>` +
     `<p class="pid copy" data-copy="${h(id)}" title="Click to copy">${h(id)}</p>` +
@@ -531,11 +583,13 @@ async function renderPartyHistory(id) {
   }
 
   try { await fetchPage('classified'); } catch (e) {
+    if (!alive(g)) return;
     view.innerHTML = e.status === 404
       ? empty('Not in this index', (e.body && e.body.detail) || 'This participant holds nothing for that party.')
       : unreachable(e);
     return;
   }
+  if (!alive(g)) return;
 
   view.innerHTML = `<section class="sec">
       <div class="tabs" role="tablist">
@@ -614,18 +668,20 @@ function jsonBlock(obj) {
     .replace(/"([^"\\]*)":/g, '<span class="c-key">"$1"</span>:') + '</pre>';
 }
 
-async function renderContract(id) {
+async function renderContract(id, g) {
   head.innerHTML = `<h1 class="page__h">Contract</h1><p class="pid copy" data-copy="${h(id)}" title="Click to copy">${h(id)}</p>`;
   view.innerHTML = loading();
   let c;
   try { c = await api('/contracts/' + encodeURIComponent(id)); }
   catch (e) {
+    if (!alive(g)) return;
     view.innerHTML = e.status === 404
       ? empty('Not in this index',
           (e.body && e.body.detail) || 'This contract id is not in the mirror. It may predate the pruning boundary, or belong to parties this node does not host.')
       : unreachable();
     return;
   }
+  if (!alive(g)) return;
 
   head.innerHTML = `<h1 class="page__h">${h(c.qname)}</h1>` +
     `<p class="pid copy" data-copy="${h(c.contract_id)}" title="Click to copy">${h(c.contract_id)}</p>`;
@@ -653,7 +709,7 @@ async function renderContract(id) {
           `<div class="tbl__row cols-ev"><span class="num">${formatNumber(e.offset)}</span>` +
           `<span class="num num--dim">${formatNumber(e.node_id)}</span>` +
           `<span class="name">${h(e.kind)}</span>` +
-          `<span class="num num--dim">${h(clock(e.record_time))}</span>` +
+          `<span class="num num--dim" title="${h(e.record_time || '')}">${h(clock(e.record_time))}</span>` +
           copyCell(e.update_id, shortCid(e.update_id)) + '</div>').join(''))
     : empty('No events', 'The mirror holds this contract without any recorded lifecycle event.');
 
@@ -712,15 +768,17 @@ function verifyBody(data) {
     ${findingsTable(data.latest_findings || [])}`;
 }
 
-async function renderVerify() {
+async function renderVerify(g) {
   head.innerHTML = `<h1 class="page__h">The mirror, checked against the <em>ledger</em>.</h1>
     <p class="page__sub">The self-check pins the current offset, re-downloads the ledger's active contract set at that offset, and diffs it against the mirror contract by contract. The expected result is zero differences: every contract the ledger reports is in the mirror, and nothing extra.</p>
     <div style="margin-top:var(--space-5)"><button class="btn btn-primary" id="run">Run self-check</button></div>`;
   view.innerHTML = loading();
 
   async function pull() {
-    try { view.innerHTML = verifyBody(await api('/verify')); }
-    catch (e) { view.innerHTML = unreachable(e); }
+    let body;
+    try { body = verifyBody(await api('/verify')); }
+    catch (e) { body = unreachable(e); }
+    if (alive(g)) view.innerHTML = body;
   }
   await pull();
 
@@ -740,6 +798,27 @@ async function renderVerify() {
   });
 }
 
+/* ---------- search results ---------- */
+
+async function renderSearch(text, g) {
+  head.innerHTML = `<h1 class="page__h">Parties matching <em>${h(text)}</em></h1>`;
+  view.innerHTML = loading();
+  let hits;
+  try { hits = await api('/search?q=' + encodeURIComponent(text)); }
+  catch (e) { if (alive(g)) view.innerHTML = unreachable(e); return; }
+  if (!alive(g)) return;
+  if (!hits || !hits.length) {
+    view.innerHTML = empty('No party matches', 'Nothing in this participant\'s index contains that text. Search matches anywhere in the party id.');
+    return;
+  }
+  const rows = hits.map((p) =>
+    `<a class="tbl__row cols-srch" href="#/party/${encodeURIComponent(p)}">` +
+    `<span class="name">${h(hintOf(p))}</span><span class="num num--dim" title="${h(p)}">${h(p)}</span></a>`).join('');
+  view.innerHTML = `<section class="sec">` +
+    tbl('cols-srch', [{ t: 'Party' }, { t: 'Full id' }], rows) +
+    `<p class="note">${formatNumber(hits.length)} match${hits.length === 1 ? '' : 'es'}${hits.length >= 20 ? '; the first 20 are shown, narrow the search for the rest' : ''}.</p></section>`;
+}
+
 /* ---------- search + copy ---------- */
 
 const q = $('#q');
@@ -757,7 +836,8 @@ q.addEventListener('keydown', async (e) => {
   if (/^00/.test(v) && v.length > 40) { location.hash = '#/contract/' + encodeURIComponent(v); return; }
   try {
     const hits = await api('/search?q=' + encodeURIComponent(v));
-    if (hits && hits.length) { location.hash = '#/party/' + encodeURIComponent(hits[0]); return; }
+    if (hits && hits.length === 1) { location.hash = '#/party/' + encodeURIComponent(hits[0]); return; }
+    if (hits && hits.length > 1) { location.hash = '#/search/' + encodeURIComponent(v); return; } // every hit, not just the first
   } catch (err) { /* fall through to the party route, which reports its own boundary */ }
   location.hash = '#/party/' + encodeURIComponent(v);
 });

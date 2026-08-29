@@ -59,3 +59,20 @@ describe("stream() and the tail on a socket that cannot be opened", () => {
     assert.equal(app.tail.tailState.running, false);
   });
 });
+
+describe("effective_after_holding_fees stays a total when a UTXO cannot be decayed", () => {
+  test("a UTXO without a fee rate counts at face value and is reported in effective_uncovered_utxos", async () => {
+    const withRate = amulet({ owner: ALICE, amount: 100, round: 100 });          // decays
+    const noRate = amulet({ owner: ALICE, amount: 7, round: 100, rate: null });  // cannot decay: face value
+    const t = tx(20, [created(withRate), created(noRate)]);
+    mock.ledger.commit(t); app.tail.applyTx(t);
+    const { body } = await api.get(`/parties/${ALICE}/balances`);
+    const cc = body.balances.find(b => b.instrument === "Amulet");
+    // The seeded five (10..50 = 150) + 100 + 7 at face; only the decayed rows are below face.
+    assert.equal(cc.balance, "257.0000000000");
+    assert.equal(cc.effective_uncovered_utxos, 1);
+    const eff = Number(cc.effective_after_holding_fees);
+    assert.ok(eff > 250 && eff < 257, `effective ${eff} must be face minus small fees, never missing whole UTXOs`);
+    assert.equal((await api.get(`/parties/${ALICE}/balances`)).body.balances.find(b => b.instrument === "Amulet").utxo_count, 7);
+  });
+});

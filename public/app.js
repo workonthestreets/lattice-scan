@@ -92,7 +92,7 @@ function tokenHelp() {
   const curl = 'curl -s -X POST ' + url + ' \\\n  -d grant_type=client_credentials -d client_id=hackathon -d client_secret=$CLIENT_SECRET \\\n  | jq -r .access_token';
   return `<aside class="gate__aside"><h3>Where the token comes from</h3>
     <p>The scanner has no accounts of its own. The participant's identity provider (Keycloak) issues a bearer token for a client id and secret, and the participant decides what that token may read. The hackathon client is <span class="num">hackathon</span>, its secret is in the organisers' message, and it may read every party; a narrower client sees only its own parties.</p>
-    <p>Sign in exchanges the secret for a 15-minute token and keeps neither; the token stays in this browser. To mint one yourself and paste it on the left:</p>
+    <p>Sign in exchanges the secret for a 15-minute token and keeps neither; the token stays in this browser. To mint one yourself and paste it into the token field:</p>
     <pre class="code">${h(curl)}</pre></aside>`;
 }
 
@@ -104,7 +104,7 @@ function authGate(e) {
     <form class="auth" id="authform">
       <label class="card__label" for="cid">Client id and secret from the identity provider</label>
       <div class="auth__row">
-        <input class="input" id="cid" autocomplete="off" spellcheck="false" placeholder="client id" value="hackathon">
+        <input class="input auth__id" id="cid" autocomplete="off" spellcheck="false" placeholder="client id" value="hackathon">
         <input class="input auth__grow" id="csec" type="password" autocomplete="off" placeholder="client secret">
       </div>
       <div class="auth__row"><button class="btn btn--primary" type="submit" id="mint">Sign in</button>

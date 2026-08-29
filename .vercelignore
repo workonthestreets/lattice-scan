@@ -1,0 +1,5 @@
+# Vercel hosts only the static UI; the scanner itself runs on Railway (see vercel.json rewrites).
+*
+!public
+!public/**
+!vercel.json

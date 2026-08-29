@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "",
+  "outputDirectory": "public",
+  "rewrites": [
+    { "source": "/(health|templates|search|verify)", "destination": "https://scanner-production-2579.up.railway.app/$1" },
+    { "source": "/(auth|parties|contracts|updates|activity|verify)/:path*", "destination": "https://scanner-production-2579.up.railway.app/$1/:path*" }
+  ]
+}

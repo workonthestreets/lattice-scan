@@ -154,6 +154,7 @@ async function route() {
   window.scrollTo(0, 0);
   lastAuthError = null;
   paintWhoami();
+  if (seg === 'party' && /\/history$/.test(arg)) { setTab('party'); return renderPartyHistory(arg.replace(/\/history$/, '')); }
   if (seg === 'party' && arg) { setTab('party'); return renderParty(arg); }
   if (seg === 'party') { setTab('party'); return renderPartyPrompt(); }
   if (seg === 'contract' && arg) { setTab(''); return renderContract(arg); }
@@ -226,9 +227,9 @@ let overviewTab = 'updates'; // survives navigation away and back within the ses
 
 function overviewTabs() {
   const tab = (name, label) =>
-    `<button class="tab" role="tab" id="tab-${name}" data-panel="${name}" aria-controls="${name}"` +
+    `<button class="tab" type="button" role="tab" id="tab-${name}" data-panel="${name}" aria-controls="${name}"` +
     ` aria-selected="${overviewTab === name}" tabindex="${overviewTab === name ? 0 : -1}">${label}</button>`;
-  return `<div class="tabs" role="tablist" aria-label="Overview tables" id="ov-tabs">` +
+  return `<div class="tabs tabs--section" role="tablist" aria-label="Overview tables" id="ov-tabs">` +
     tab('updates', 'Recent updates') + tab('templates', 'Templates') + '</div>';
 }
 
@@ -255,7 +256,7 @@ function templatesTable() {
     `<span class="num num--r">${formatNumber(t.active)}</span>` +
     `<span class="num num--r num--dim">${formatNumber(t.total)}</span></div>`).join('');
   const more = allTemplates.length > 20 && !templatesExpanded
-    ? `<button class="btn btn-ghost" id="tpl-all" style="margin-top:var(--space-4)">Show all ${formatNumber(allTemplates.length)}</button>`
+    ? `<button class="btn btn-ghost" type="button" id="tpl-all" style="margin-top:var(--space-4)">Show all ${formatNumber(allTemplates.length)}</button>`
     : '';
   return tbl('cols-tpl', [{ t: 'Template' }, { t: 'Active', r: 1 }, { t: 'Total', r: 1 }], rows) + more;
 }
@@ -386,7 +387,8 @@ async function renderParty(id) {
   view.innerHTML = `<section id="s-bal">${balancesTable(bal)}</section>
     <section class="sec"><div class="sec__head"><h2 class="sec__h">Holdings</h2></div>
       <div id="s-hold">${loading()}</div></section>
-    <section class="sec"><div class="sec__head"><h2 class="sec__h">History</h2></div>
+    <section class="sec"><div class="sec__head"><h2 class="sec__h">History</h2>
+      <a class="sec__link" href="#/party/${encodeURIComponent(id)}/history">Full transaction history</a></div>
       <div id="s-hist">${loading()}</div></section>
     <section class="sec"><div class="sec__head"><h2 class="sec__h">Contracts</h2>
       <select class="input" id="tpl-filter" aria-label="Filter contracts by template"><option value="">All templates</option></select></div>
@@ -414,6 +416,119 @@ async function renderParty(id) {
       $('#s-con').innerHTML = contractsTable(q ? all.filter((c) => c.qname === q) : all);
     });
   }
+}
+
+/* ---------- party transaction history ---------- */
+
+function txnRows(list) {
+  return list.map((x) =>
+    `<div class="tbl__row cols-txn"><span class="num num--dim" title="${h(x.record_time || '')}">${h(clock(x.record_time))}</span>` +
+    `<span class="name">${h(x.kind.replace(/_/g, ' '))}</span>` +
+    `<span class="num num--r" title="${h(x.amount || '')}">${amt(x.amount)}</span>` +
+    `<span class="num">${h(x.instrument || '')}</span>` +
+    (x.counterparty ? partyCell(x.counterparty) : '<span class="num num--dim"></span>') +
+    `<span class="num num--r num--dim copy" data-copy="${h(x.update_id)}" title="Offset ${formatNumber(x.offset)}. Click to copy update id">${formatNumber(x.offset)}</span></div>`).join('');
+}
+
+function eventRows(list) {
+  return list.map((x) =>
+    `<a class="tbl__row cols-ev" href="#/contract/${encodeURIComponent(x.contract_id)}">` +
+    `<span class="num num--dim" title="${h(x.record_time || '')}">${h(clock(x.record_time))}</span>` +
+    `<span class="name">${h(x.kind)}</span>` +
+    `<span class="name" title="${h(x.qname)}">${h(x.qname)}</span>` +
+    `<span class="num num--r" title="${h(x.amount || '')}">${amt(x.amount)}${x.locked ? ' <span class="num--dim">locked</span>' : ''}</span>` +
+    `<span class="num">${h(x.instrument || '')}</span>` +
+    `<span class="num num--r num--dim">${formatNumber(x.offset)}</span></a>`).join('');
+}
+
+async function renderPartyHistory(id) {
+  const PAGE = 200;
+  head.innerHTML = `<h1 class="page__h">Everything <em>${h(hintOf(id))}</em> moved</h1>` +
+    `<p class="pid copy" data-copy="${h(id)}" title="Click to copy">${h(id)}</p>` +
+    `<p class="page__sub"><a class="sec__link" href="#/party/${encodeURIComponent(id)}">Back to the party</a></p>`;
+  view.innerHTML = loading();
+
+  const state = { mode: 'classified', classified: [], raw: [], done: { classified: false, raw: false }, kind: '', instrument: '' };
+
+  async function fetchPage(mode) {
+    const list = state[mode];
+    const before = list.length ? list[list.length - 1].offset : 0;
+    const qs = `limit=${PAGE}${before ? `&before_offset=${before}` : ''}${mode === 'raw' ? '&raw=1' : ''}`;
+    const d = await api(`/parties/${encodeURIComponent(id)}/history?${qs}`);
+    const rows = mode === 'raw' ? (d.raw || []) : (d.classified || []);
+    state[mode] = list.concat(rows);
+    if (rows.length < PAGE) state.done[mode] = true;
+  }
+
+  try { await fetchPage('classified'); } catch (e) {
+    view.innerHTML = e.status === 404
+      ? empty('Not in this index', (e.body && e.body.detail) || 'This participant holds nothing for that party.')
+      : unreachable(e);
+    return;
+  }
+
+  view.innerHTML = `<section class="sec">
+      <div class="tabs" role="tablist">
+        <button class="tab" data-mode="classified" role="tab" aria-selected="true">Transactions</button>
+        <button class="tab" data-mode="raw" role="tab" aria-selected="false">Contract events</button>
+      </div>
+      <div class="filters" id="filters">
+        <select class="input" id="f-kind" aria-label="Filter by kind"><option value="">All kinds</option></select>
+        <select class="input" id="f-inst" aria-label="Filter by instrument"><option value="">All instruments</option></select>
+        <span class="num num--dim" id="count"></span>
+      </div>
+      <div id="s-txn"></div>
+      <div class="more"><button class="btn btn-ghost" id="older">Load older</button>
+        <span class="num num--dim" id="floor"></span></div>
+    </section>`;
+
+  const sel = (idSel, key, rows) => {
+    const el = $(idSel), cur = el.value;
+    const vals = [...new Set(rows.map((r) => r[key]).filter(Boolean))].sort();
+    el.innerHTML = `<option value="">${idSel === '#f-kind' ? 'All kinds' : 'All instruments'}</option>` +
+      vals.map((v) => `<option value="${h(v)}"${v === cur ? ' selected' : ''}>${h(idSel === '#f-kind' ? v.replace(/_/g, ' ') : v)}</option>`).join('');
+  };
+
+  function paint() {
+    const mode = state.mode;
+    const all = state[mode];
+    sel('#f-kind', 'kind', all); sel('#f-inst', 'instrument', all);
+    const rows = all.filter((r) => (!state.kind || r.kind === state.kind) && (!state.instrument || r.instrument === state.instrument));
+    $('#count').textContent = `${formatNumber(rows.length)} of ${formatNumber(all.length)} loaded`;
+    if (!all.length) {
+      $('#s-txn').innerHTML = mode === 'raw'
+        ? empty('No contract events', 'No holding contract for this party was created or archived inside the readable window.')
+        : empty('No classified history', 'No update in the indexed window moved value for this party. Readable history starts at the pruning boundary.');
+    } else if (!rows.length) {
+      $('#s-txn').innerHTML = empty('Nothing matches', 'Widen the kind or instrument filter.');
+    } else {
+      $('#s-txn').innerHTML = mode === 'raw'
+        ? tbl('cols-ev', [{ t: 'Time' }, { t: 'Event' }, { t: 'Template' }, { t: 'Amount', r: 1 }, { t: 'Instrument' }, { t: 'Offset', r: 1 }], eventRows(rows))
+        : tbl('cols-txn', [{ t: 'Time' }, { t: 'Kind' }, { t: 'Amount', r: 1 }, { t: 'Instrument' }, { t: 'Counterparty' }, { t: 'Offset', r: 1 }], txnRows(rows));
+    }
+    $('#older').hidden = state.done[mode];
+    $('#floor').textContent = state.done[mode] && all.length
+      ? `Oldest readable entry at offset ${formatNumber(all[all.length - 1].offset)}. Earlier history is pruned on this participant.` : '';
+  }
+
+  document.querySelectorAll('.tab[data-mode]').forEach((b) => b.addEventListener('click', async () => {
+    state.mode = b.dataset.mode; state.kind = ''; state.instrument = '';
+    document.querySelectorAll('.tab[data-mode]').forEach((t) => t.setAttribute('aria-selected', t === b ? 'true' : 'false'));
+    if (!state[state.mode].length && !state.done[state.mode]) {
+      $('#s-txn').innerHTML = loading();
+      try { await fetchPage(state.mode); } catch (e) { $('#s-txn').innerHTML = unreachable(e); return; }
+    }
+    paint();
+  }));
+  $('#f-kind').addEventListener('change', (e) => { state.kind = e.target.value; paint(); });
+  $('#f-inst').addEventListener('change', (e) => { state.instrument = e.target.value; paint(); });
+  $('#older').addEventListener('click', async () => {
+    $('#older').disabled = true;
+    try { await fetchPage(state.mode); } catch (e) { $('#s-txn').insertAdjacentHTML('beforeend', unreachable(e)); }
+    $('#older').disabled = false;
+    paint();
+  });
+  paint();
 }
 
 /* ---------- contract ---------- */
@@ -558,6 +673,12 @@ async function renderVerify() {
 /* ---------- search + copy ---------- */
 
 const q = $('#q');
+const qClear = $('#q-clear');
+const syncClear = () => { qClear.hidden = !q.value; };
+q.addEventListener('input', syncClear);
+qClear.addEventListener('click', () => { q.value = ''; syncClear(); q.focus(); });
+q.addEventListener('keydown', (e) => { if (e.key === 'Escape') { q.value = ''; syncClear(); } });
+syncClear();
 q.addEventListener('keydown', async (e) => {
   if (e.key !== 'Enter') return;
   const v = q.value.trim();
@@ -586,7 +707,7 @@ document.addEventListener('click', (e) => {
 // Arrow keys move between tabs, per the WAI-ARIA tabs pattern.
 document.addEventListener('keydown', (e) => {
   const t = e.target instanceof Element ? e.target.closest('#ov-tabs .tab') : null;
-  if (!t) return;
+  if (!t || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return; // leave browser shortcuts alone
   const tabs = Array.from(document.querySelectorAll('#ov-tabs .tab'));
   const i = tabs.indexOf(t);
   let j = null;

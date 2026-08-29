@@ -32,7 +32,7 @@
   .sec { margin-top: var(--space-8); }
   .sec__head { display: flex; align-items: baseline; justify-content: space-between;
     gap: var(--space-5); margin-bottom: var(--space-4); flex-wrap: wrap; }
-  .sec__h { font-family: var(--font-display); font-weight: 600; font-size: 1.25rem;
+  .sec__h, .tabs--section .tab { font-family: var(--font-display); font-weight: 600; font-size: 1.25rem;
     letter-spacing: -0.025em; margin: 0; }
   .note { color: var(--bone-dim); font-size: 0.9375rem; margin: var(--space-3) 0 0; max-width: 72ch; }
 
@@ -59,16 +59,11 @@
   a.tbl__row:hover { background: var(--surface-raised); }
   .tbl__row > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  .tabs { display: flex; gap: var(--space-6); border-bottom: 1px solid var(--border); }
-  .tab { appearance: none; -webkit-appearance: none; background: none; border: 0; margin: 0;
-    padding: 0 0 12px; cursor: pointer; position: relative; line-height: 1.2;
-    font-family: var(--font-display); font-weight: 600; font-size: 1.25rem; letter-spacing: -0.025em;
-    color: var(--mute); transition: color var(--duration-snap) var(--ease-out); }
-  .tab:hover { color: var(--bone-dim); }
-  .tab[aria-selected="true"] { color: var(--bone); }
-  .tab[aria-selected="true"]::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px;
-    height: 2px; background: var(--signal); }
-  .tab:focus-visible { border-radius: var(--radius-1); }
+  /* Section-heading variant of the system .tabs component: the tabs stand in for the h2. */
+  .tabs--section { gap: var(--space-6); }
+  .tabs--section .tab { padding: 0 0 12px; line-height: 1.2; }
+  .tabs--section .tab[aria-selected="true"]::after { right: 0; }
+  .tabs--section .tab:focus-visible { border-radius: var(--radius-1); }
   .panel[hidden] { display: none; }
   .panel .tbl, .panel .empty { border-top: 0; }
 
@@ -99,8 +94,21 @@
   .empty p { color: var(--bone-dim); margin: 0; max-width: 68ch; font-size: 0.9375rem; }
   .loading { color: var(--mute); font-size: 0.9375rem; padding: var(--space-5) 0; }
 
-  .nav__search { width: 340px; max-width: 38vw; font-family: var(--font-mono); font-size: 0.75rem;
-    letter-spacing: 0; padding: 9px 12px; }
+  .nav__search-wrap { position: relative; width: 340px; max-width: 38vw; }
+  .nav__search { width: 100%; font-family: var(--font-mono); font-size: 0.75rem;
+    letter-spacing: 0; padding: 9px 36px 9px 12px; }
+  .nav__clear { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 26px; height: 26px;
+    display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 2px;
+    background: transparent; color: var(--mute); cursor: pointer; }
+  .nav__clear:hover { color: var(--bone); background: rgba(255,255,255,0.06); }
+  .nav__clear[hidden] { display: none; }
+  .cols-txn { grid-template-columns: 92px 130px 1fr 96px minmax(0,1.2fr) 110px; }
+  .cols-ev { grid-template-columns: 92px 90px minmax(0,1.6fr) 1fr 96px 110px; }
+  .sec__link { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--mute); text-decoration: none; }
+  .sec__link:hover { color: var(--signal); }
+  .filters { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; margin: var(--space-4) 0; }
+  .more { display: flex; align-items: center; gap: var(--space-4); margin-top: var(--space-4); }
   .nav__mid { display: inline-flex; align-items: center; gap: var(--space-6); }
   .nav__who { background: transparent; border: 0; color: var(--mute); font-family: var(--font-mono);
     font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; padding: 0 var(--space-4);
@@ -120,7 +128,7 @@
   @media (max-width: 860px) {
     .strip .card { grid-column: span 6; }
     .nav { flex-wrap: wrap; height: auto; padding-top: 12px; padding-bottom: 12px; gap: 12px; }
-    .nav__search { width: 100%; max-width: none; }
+    .nav__search-wrap { width: 100%; max-width: none; }
   }
 </style>
 </head>
@@ -142,8 +150,14 @@
   </ul>
   <button class="nav__who" id="who" type="button" title="Click to forget the token">Not signed in</button>
   <label class="sr-only" for="q">Party id or contract id</label>
-  <input class="input nav__search" id="q" autocomplete="off" spellcheck="false"
-    placeholder="Party id or contract id">
+  <div class="nav__search-wrap">
+    <input class="input nav__search" id="q" autocomplete="off" spellcheck="false"
+      placeholder="Party id or contract id">
+    <button class="nav__clear" id="q-clear" type="button" aria-label="Clear search" hidden>
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13"
+        stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>
+    </button>
+  </div>
 </nav>
 
 <main class="shell page">

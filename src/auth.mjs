@@ -40,7 +40,11 @@ export async function authenticate(req) {
   const me = await ledgerGet("/v2/authenticated-user", tok);
   if (me.status === 401 || me.status === 403) {
     const cause = me.body?.cause || (typeof me.body === "string" ? me.body.slice(0, 120) : "");
-    throw new AuthError(401, "The participant rejected this token" + (cause ? ": " + cause : "") + ".");
+    // The participant is the authority; we only add a hint when the value is plainly not a JWT.
+    const hint = tok.split(".").length !== 3
+      ? " It does not look like a bearer token (a token has three dot-separated parts and starts with eyJ). If you pasted the client secret, use the client id and secret form instead; the scanner exchanges it for a token."
+      : "";
+    throw new AuthError(401, "The participant rejected this token" + (cause ? ": " + cause : "") + "." + hint);
   }
   if (me.status !== 200) throw new AuthError(502, `Participant returned ${me.status} while checking the token.`);
   const userId = me.body?.user?.id;

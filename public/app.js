@@ -89,20 +89,48 @@ async function api(path, init) {
 function authGate(e) {
   if (!e || (e.status !== 401 && e.status !== 403)) return null;
   const detail = (e.body && e.body.detail) || (e.status === 401 ? 'Sign in with a participant token.' : 'Not allowed for this token.');
-  return `<div class="empty"><h3>${e.status === 401 ? 'Sign in with a participant token' : 'Not allowed for this token'}</h3>
+  return `<div class="empty"><h3>${e.status === 401 ? 'Sign in to the participant' : 'Not allowed for this token'}</h3>
     <p>${h(detail)}</p>
     <form class="auth" id="authform">
-      <label class="card__label" for="tok">Bearer token issued by the participant's identity provider</label>
-      <input class="input" id="tok" type="password" autocomplete="off" placeholder="eyJhbGciOi...">
-      <div class="auth__row"><button class="btn btn--primary" type="submit">Use token</button>
+      <label class="card__label" for="cid">Client id and secret from the identity provider</label>
+      <div class="auth__row">
+        <input class="input" id="cid" autocomplete="off" spellcheck="false" placeholder="client id" value="hackathon">
+        <input class="input auth__grow" id="csec" type="password" autocomplete="off" placeholder="client secret">
+      </div>
+      <div class="auth__row"><button class="btn btn--primary" type="submit" id="mint">Sign in</button>
       ${token() ? '<button class="btn btn--ghost" type="button" id="signout">Forget token</button>' : ''}</div>
+      <p class="auth__note" id="authmsg">The scanner exchanges the secret for a 15-minute token at the identity provider and keeps neither. The token stays in this browser.</p>
+      <label class="card__label" for="tok">Or paste a bearer token you already have</label>
+      <div class="auth__row">
+        <input class="input auth__grow" id="tok" type="password" autocomplete="off" placeholder="eyJhbGciOi...">
+        <button class="btn btn--ghost" type="button" id="usetok">Use token</button>
+      </div>
     </form></div>`;
 }
 
 function bindAuth() {
   const f = document.getElementById('authform');
   if (!f) return;
-  f.addEventListener('submit', (ev) => { ev.preventDefault(); setToken(document.getElementById('tok').value.trim()); route(); });
+  const msg = (t) => { const m = document.getElementById('authmsg'); if (m) m.textContent = t; };
+  f.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const cid = document.getElementById('cid').value.trim(), sec = document.getElementById('csec').value.trim();
+    if (!cid || !sec) { msg('Enter the client id and the client secret.'); return; }
+    const b = document.getElementById('mint'); b.disabled = true; msg('Asking the identity provider for a token');
+    try {
+      const r = await fetch('/auth/token', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ client_id: cid, client_secret: sec }) });
+      const body = await r.json().catch(() => null);
+      if (!r.ok || !body || !body.access_token) { msg((body && body.detail) || ('Sign-in failed (' + r.status + ')')); b.disabled = false; return; }
+      setToken(body.access_token);
+      route();
+    } catch (err) { msg('Could not reach the scanner: ' + err.message); b.disabled = false; }
+  });
+  const ut = document.getElementById('usetok');
+  if (ut) ut.addEventListener('click', () => {
+    const t = document.getElementById('tok').value.trim();
+    if (t.split('.').length !== 3) { msg('That is not a bearer token. A token has three dot-separated parts and starts with eyJ. If you have the client secret, use the form above.'); return; }
+    setToken(t); route();
+  });
   const so = document.getElementById('signout');
   if (so) so.addEventListener('click', () => { setToken(''); route(); });
 }

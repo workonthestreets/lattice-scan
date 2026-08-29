@@ -140,6 +140,22 @@ async function route(req, res) {
     return fs.createReadStream(f).pipe(res);
   }
   if (p === "/health") return json(res, 200, await health());
+  if (p === "/auth/token" && req.method === "POST") {
+    // Convenience for the dashboard: exchange a client id + secret for a bearer token at the participant's
+    // identity provider. The scanner forwards the exchange and returns the token; it keeps neither.
+    let body = "";
+    for await (const chunk of req) { body += chunk; if (body.length > 8192) break; }
+    let creds = {}; try { creds = JSON.parse(body || "{}"); } catch {}
+    const clientId = String(creds.client_id || "").trim(), clientSecret = String(creds.client_secret || "").trim();
+    if (!clientId || !clientSecret) return json(res, 400, { error: "bad_request", detail: "client_id and client_secret are required" });
+    try {
+      const r = await fetch(config.idpTokenUrl, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ grant_type: "client_credentials", client_id: clientId, client_secret: clientSecret }), signal: AbortSignal.timeout(15000) });
+      const t = await r.json().catch(() => ({}));
+      if (!r.ok) return json(res, 401, { error: "unauthorized", detail: `The identity provider rejected these credentials${t.error_description ? ": " + t.error_description : ""}.` });
+      return json(res, 200, { access_token: t.access_token, expires_in: t.expires_in, token_type: t.token_type });
+    } catch (e) { return json(res, 502, { error: "idp_unreachable", detail: `Could not reach the identity provider: ${e.name === "TimeoutError" ? "timeout" : e.message}` }); }
+  }
 
   // Everything below is ledger data: the participant decides who may read what.
   let auth;

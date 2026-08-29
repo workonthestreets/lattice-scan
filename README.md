@@ -11,7 +11,7 @@ Built for Track A1 of the Cantor8 "Build on Canton" hackathon (London, 29 August
 | Bootstrap (full ACS over one WebSocket, into SQLite) | 109,778 contracts, 43,631 holdings, 26,020 parties, 145 templates, in 11.5 s |
 | Resume after `kill -9` mid-tail | re-read 0 contracts, cursor resumed at the committed offset, tail reconnected in under 4 s |
 | Self-check (ledger ACS at a pinned offset vs mirror) | 109,778 vs 109,778, 0 missing, 0 phantom, 9.6 to 18.4 s per run |
-| Canton Coin balances vs the public Scan API oracle | 8 of 8 parties match to 10 decimal places (`scripts/oracle.mjs`) |
+| Canton Coin balances vs the public Scan API oracle | 11 of 12 parties match to 10 decimal places; the 12th is the validator's own party, whose 2,161.8010800866 CC gap reconciles exactly to five `reward_collect` events that landed after the Scan snapshot (`scripts/oracle.mjs`) |
 | History reconstructed before the snapshot | every readable update back to the participant's pruning floor: 523 updates, 1,099 events, about 25 hours (2026-08-28 14:00 UTC onward), replayed in 0.6 s; classified as reward_collect 148, transfer_in 21, transfer_out 13, self_merge 5, mint 1, unclassified 5 |
 | Lag | seconds between the last record time applied and now; shown live in `/health` (the reference scanner reports about 2.7 s; DevNet on a Saturday emits an update every 10 to 60 s, so the figure tracks ledger activity, not our speed) |
 
@@ -28,12 +28,15 @@ cp .env.example .env            # fill CLIENT_SECRET from the organisers' messag
 npm run check                   # token, ledger version, rights, pruned offset, mirror state
 npm start                       # bootstrap (or resume) + tail + API on http://localhost:8787
 npm run verify                  # one self-check run (or POST /verify/run while it is running)
-npm run oracle -- <party> ...   # our CC balances vs the Scan API holdings summary
+npm run oracle                  # our CC balances vs the Scan API holdings summary
+npm run oracle -- <party> ...   # ... for specific parties
 npm run measure                 # the numbers above, live
 sh scripts/killtest.sh          # kill -9, restart, resume, self-check
 ```
 
 `FILTER_MODE=any` uses `filtersForAnyParty` (needs a token with `CanReadAsAnyParty`, which the hackathon client has). If the token is party-scoped, set `FILTER_MODE=parties` and `PARTIES=<comma separated party ids>`.
+
+The Scan API refuses any holdings query covering more than 1,000 contracts, so the oracle picks the largest CC balances holding at most 100 UTXOs, asks for one party per request, and reports a party above the cap as skipped rather than failing the run. Our index is live and the Scan snapshot is hourly, so a party that moved coin since the snapshot is labelled `moved since snapshot`, not counted as a mismatch. A real mismatch exits non-zero.
 
 ## API
 
@@ -45,7 +48,7 @@ sh scripts/killtest.sh          # kill -9, restart, resume, self-check
 | `GET /parties/{party}/history?limit=&before_offset=&raw=1` | classified activity (transfer_in, transfer_out, self_merge, reward_collect, lock, unlock, mint, burn, unclassified) |
 | `GET /parties/{party}/contracts?qname=&active=1` | every contract the party is a stakeholder of, with role |
 | `GET /parties/{party}/templates` | template counts for the party |
-| `GET /parties/top?limit=` | parties by UTXO count (the fragmentation view) |
+| `GET /parties/top?limit=&instrument=&max_utxos=&order=` | parties by UTXO count (the fragmentation view), or by approximate balance with `order=balance`; `max_utxos` caps holdings per party |
 | `GET /contracts/{id}` | payload, holding view, stakeholders, lifecycle, events |
 | `GET /updates/recent?limit=` | latest updates with events, parties and classified activity |
 | `GET /templates` | template counts across the index |

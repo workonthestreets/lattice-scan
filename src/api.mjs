@@ -10,6 +10,7 @@ import { tailState } from "./tail.mjs";
 import { runVerify, verifyState } from "./verify.mjs";
 import { toUnits, fromUnits } from "./decimal.mjs";
 import { effectiveAmount } from "./reduce.mjs";
+import { authenticate, canRead, canReadAny, describe, AuthError } from "./auth.mjs";
 
 const PUBLIC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../public");
 const Q = {
@@ -27,6 +28,7 @@ const Q = {
   contract: db.prepare("SELECT * FROM contracts WHERE contract_id = ?"),
   contractEvents: db.prepare("SELECT offset, node_id, update_id, kind, record_time FROM events WHERE contract_id = ? ORDER BY offset"),
   contractHolding: db.prepare("SELECT * FROM holdings WHERE contract_id = ?"),
+  contractParties: db.prepare("SELECT party FROM stakeholders WHERE contract_id = ?"),
   recentUpdates: db.prepare("SELECT update_id, max(offset) AS offset, max(record_time) AS record_time, count(*) AS n FROM events GROUP BY update_id ORDER BY offset DESC LIMIT ?"),
   updateEvents: db.prepare("SELECT kind, contract_id, qname FROM events WHERE update_id = ? ORDER BY node_id"),
   updateParties: db.prepare("SELECT DISTINCT s.party FROM events e JOIN stakeholders s ON s.contract_id = e.contract_id WHERE e.update_id = ? LIMIT 12"),
@@ -89,6 +91,7 @@ export async function health() {
     tail: { connected: tailState.connected, reconnects: tailState.reconnects, stale_auth_reconnects: tailState.staleAuthReconnects, updates_applied: tailState.updatesApplied, errors: tailState.errors, last_error: tailState.lastError },
     verify: verifyState.last ? { at_offset: verifyState.last.at_offset, only_in_ledger: verifyState.last.only_in_ledger, only_in_mirror: verifyState.last.only_in_mirror, duration_ms: verifyState.last.duration_ms } : null,
     filter_mode: config.filterMode,
+    auth_mode: config.authMode,
     started_at: getMeta("started_at") || null,
     uptime_s: Math.round(process.uptime()),
     boundary: "Contracts where a party hosted on this participant is a stakeholder. Nothing from other validators. History before the pruned offset is not reconstructable.",
@@ -137,12 +140,22 @@ async function route(req, res) {
     return fs.createReadStream(f).pipe(res);
   }
   if (p === "/health") return json(res, 200, await health());
+
+  // Everything below is ledger data: the participant decides who may read what.
+  let auth;
+  try { auth = await authenticate(req); }
+  catch (e) { if (e instanceof AuthError) return json(res, e.status, { error: e.status === 401 ? "unauthorized" : "forbidden", detail: e.message }); throw e; }
+  const forbidden = (detail) => json(res, 403, { error: "forbidden", detail });
+  const needAll = () => forbidden("This view spans every party on the participant; your token can read only its own parties (no CanReadAsAnyParty right).");
+  if (p === "/auth/whoami") return json(res, 200, describe(auth));
   if (p === "/parties/top") {
+    if (!auth.anyParty) return needAll();
     const inst = q.get("instrument") || "", mx = Number(q.get("max_utxos") || 0), ord = q.get("order") === "balance" ? "balance" : "utxos";
     return json(res, 200, Q.topParties.all(inst, inst, mx, mx, ord, lim));
   }
   if (seg[0] === "parties" && seg.length >= 2) {
     const party = seg[1];
+    if (!canRead(auth, party)) return forbidden("Your token has no read rights on this party. The participant, not the scanner, decides that.");
     if (seg[2] === undefined || seg[2] === "balances") { const b = await balances(party); return b ? json(res, 200, b) : notFound(res, "party not in this participant's index (boundary: only parties hosted here or transacting with them)"); }
     if (!Q.partyExists.get(party)) return notFound(res, "party not in this participant's index");
     if (seg[2] === "holdings") { const locked = q.get("locked"); return json(res, 200, Q.holdingsFiltered.all(party, q.get("instrument") || "", q.get("instrument") || "", locked === null ? -1 : Number(locked), locked === null ? -1 : Number(locked), lim).map(h => ({ ...h, locked: !!h.locked, lock_holders: h.lock_holders ? JSON.parse(h.lock_holders) : null }))); }
@@ -152,16 +165,19 @@ async function route(req, res) {
   }
   if (seg[0] === "contracts" && seg[1]) {
     const c = Q.contract.get(seg[1]); if (!c) return notFound(res, "contract not in index");
+    if (!canReadAny(auth, Q.contractParties.all(seg[1]).map(x => x.party))) return forbidden("Your token can read none of this contract's stakeholders.");
     return json(res, 200, { ...c, payload: JSON.parse(c.payload), holding_view: c.holding_view ? JSON.parse(c.holding_view) : null,
       signatories: JSON.parse(c.signatories), observers: JSON.parse(c.observers), holding: Q.contractHolding.get(seg[1]) || null, events: Q.contractEvents.all(seg[1]) });
   }
   if (p === "/updates/recent") {
+    if (!auth.anyParty) return needAll();
     const ups = Q.recentUpdates.all(Math.min(lim, 200));
     return json(res, 200, ups.map(u => ({ ...u, events: Q.updateEvents.all(u.update_id), parties: Q.updateParties.all(u.update_id).map(x => x.party), activity: Q.updateActivity.all(u.update_id) })));
   }
-  if (p === "/templates") return json(res, 200, Q.templates.all());
-  if (p === "/search") { const s = q.get("q") || ""; return json(res, 200, s.length < 2 ? [] : Q.searchParties.all("%" + s + "%").map(x => x.party)); }
-  if (p === "/activity/kinds") return json(res, 200, Q.activityKinds.all());
+  if (p === "/templates") { if (!auth.anyParty) return needAll(); return json(res, 200, Q.templates.all()); }
+  if (p === "/search") { const s = q.get("q") || ""; const hits = s.length < 2 ? [] : Q.searchParties.all("%" + s + "%").map(x => x.party); return json(res, 200, hits.filter(x => canRead(auth, x))); }
+  if (p === "/activity/kinds") { if (!auth.anyParty) return needAll(); return json(res, 200, Q.activityKinds.all()); }
+  if (p.startsWith("/verify") && !auth.anyParty) return needAll();
   if (p === "/verify" && req.method === "GET") { const runs = Q.verifyRuns.all(); return json(res, 200, { running: verifyState.running, runs, latest_findings: runs[0] ? Q.verifyFindings.all(runs[0].id) : [] }); }
   if (p === "/verify/run" && req.method === "POST") {
     try { return json(res, 200, await runVerify({ repair: q.get("repair") !== "0" })); }
@@ -172,7 +188,7 @@ async function route(req, res) {
 
 export function startApi() {
   const server = http.createServer((req, res) => {
-    if (req.method === "OPTIONS") { res.writeHead(204, { "access-control-allow-origin": "*", "access-control-allow-methods": "GET,POST,OPTIONS" }); return res.end(); }
+    if (req.method === "OPTIONS") { res.writeHead(204, { "access-control-allow-origin": "*", "access-control-allow-methods": "GET,POST,OPTIONS", "access-control-allow-headers": "authorization,content-type" }); return res.end(); }
     route(req, res).catch(e => { log("api error", e.message); try { json(res, 500, { error: "internal", detail: String(e.message || e) }); } catch {} });
   });
   server.listen(config.port, () => log(`api: http://localhost:${config.port}/  (health at /health)`));

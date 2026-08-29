@@ -72,14 +72,61 @@ function tbl(cls, cols, rows) {
   return `<div class="wrap"><div class="tbl"><div class="tbl__head ${cls}">${head}</div>${rows}</div></div>`;
 }
 
-async function api(path) {
-  const r = await fetch(path, { headers: { accept: 'application/json' } });
+const TOKEN_KEY = 'lattice_scan_token';
+function token() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; } }
+function setToken(t) { try { if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY); } catch {} }
+function authHeaders() { const t = token(); return t ? { authorization: 'Bearer ' + t } : {}; }
+
+async function api(path, init) {
+  const r = await fetch(path, { ...(init || {}), headers: { accept: 'application/json', ...authHeaders(), ...((init && init.headers) || {}) } });
   const body = await r.json().catch(() => null);
-  if (!r.ok) { const e = new Error('http ' + r.status); e.status = r.status; e.body = body; throw e; }
+  if (!r.ok) { const e = new Error('http ' + r.status); e.status = r.status; e.body = body; if (r.status === 401 || r.status === 403) lastAuthError = e; throw e; }
   return body;
 }
 
-function unreachable() {
+/* ---------- auth ---------- */
+
+function authGate(e) {
+  if (!e || (e.status !== 401 && e.status !== 403)) return null;
+  const detail = (e.body && e.body.detail) || (e.status === 401 ? 'Sign in with a participant token.' : 'Not allowed for this token.');
+  return `<div class="empty"><h3>${e.status === 401 ? 'Sign in with a participant token' : 'Not allowed for this token'}</h3>
+    <p>${h(detail)}</p>
+    <form class="auth" id="authform">
+      <label class="card__label" for="tok">Bearer token issued by the participant's identity provider</label>
+      <input class="input" id="tok" type="password" autocomplete="off" placeholder="eyJhbGciOi...">
+      <div class="auth__row"><button class="btn btn--primary" type="submit">Use token</button>
+      ${token() ? '<button class="btn btn--ghost" type="button" id="signout">Forget token</button>' : ''}</div>
+    </form></div>`;
+}
+
+function bindAuth() {
+  const f = document.getElementById('authform');
+  if (!f) return;
+  f.addEventListener('submit', (ev) => { ev.preventDefault(); setToken(document.getElementById('tok').value.trim()); route(); });
+  const so = document.getElementById('signout');
+  if (so) so.addEventListener('click', () => { setToken(''); route(); });
+}
+
+async function paintWhoami() {
+  const el = document.getElementById('who');
+  if (!el) return;
+  try {
+    const w = await api('/auth/whoami');
+    if (w.mode === 'off') { el.textContent = 'Open access'; el.title = 'AUTH_MODE=off'; return; }
+    el.textContent = w.any_party ? `${w.user} · all parties` : `${w.user} · ${w.parties_count} parties`;
+    el.title = 'Token expires ' + (w.token_expires_at || 'unknown');
+  } catch (e) {
+    el.textContent = token() ? 'Token rejected' : 'Not signed in';
+  }
+}
+document.addEventListener('click', (ev) => {
+  if (ev.target && ev.target.id === 'who') { setToken(''); location.hash = '#/'; route(); }
+});
+
+let lastAuthError = null;
+function unreachable(e) {
+  const gate = authGate(e || lastAuthError);
+  if (gate) { setTimeout(bindAuth, 0); return gate; }
   return empty('API unreachable at ' + location.origin,
     'The scanner process is not answering on this origin. Start it and reload.');
 }
@@ -105,6 +152,8 @@ async function route() {
   stopTimers();
   const { seg, arg } = parseRoute();
   window.scrollTo(0, 0);
+  lastAuthError = null;
+  paintWhoami();
   if (seg === 'party' && arg) { setTab('party'); return renderParty(arg); }
   if (seg === 'party') { setTab('party'); return renderPartyPrompt(); }
   if (seg === 'contract' && arg) { setTab(''); return renderContract(arg); }
@@ -173,6 +222,32 @@ function updateRow(u) {
 
 let allTemplates = [];
 let templatesExpanded = false;
+let overviewTab = 'updates'; // survives navigation away and back within the session
+
+function overviewTabs() {
+  const tab = (name, label) =>
+    `<button class="tab" role="tab" id="tab-${name}" data-panel="${name}" aria-controls="${name}"` +
+    ` aria-selected="${overviewTab === name}" tabindex="${overviewTab === name ? 0 : -1}">${label}</button>`;
+  return `<div class="tabs" role="tablist" aria-label="Overview tables" id="ov-tabs">` +
+    tab('updates', 'Recent updates') + tab('templates', 'Templates') + '</div>';
+}
+
+function overviewPanel(name) {
+  return `<div class="panel" id="${name}" role="tabpanel" aria-labelledby="tab-${name}"` +
+    `${overviewTab === name ? '' : ' hidden'}>${loading()}</div>`;
+}
+
+function selectTab(name, focus) {
+  overviewTab = name;
+  document.querySelectorAll('#ov-tabs .tab').forEach((b) => {
+    const on = b.dataset.panel === name;
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+    b.tabIndex = on ? 0 : -1;
+    if (on && focus) b.focus();
+    const p = document.getElementById(b.dataset.panel);
+    if (p) p.hidden = !on;
+  });
+}
 
 function templatesTable() {
   const rows = (templatesExpanded ? allTemplates : allTemplates.slice(0, 20)).map((t) =>
@@ -191,10 +266,7 @@ async function renderOverview() {
       <span id="live"></span>
     </div><p class="page__sub" id="boundary"></p>`;
   view.innerHTML = `<div id="strip">${loading()}</div>
-    <section class="sec"><div class="sec__head"><h2 class="sec__h">Recent updates</h2></div>
-      <div id="updates">${loading()}</div></section>
-    <section class="sec"><div class="sec__head"><h2 class="sec__h">Templates</h2></div>
-      <div id="templates">${loading()}</div></section>`;
+    <section class="sec">${overviewTabs()}${overviewPanel('updates')}${overviewPanel('templates')}</section>`;
 
   async function pullHealth() {
     try {
@@ -203,7 +275,7 @@ async function renderOverview() {
       $('#boundary').textContent = d.boundary || '';
       $('#strip').innerHTML = healthStrip(d) +
         `<p class="note">History before offset ${formatNumber(d.pruned_offset)} is pruned on this participant and cannot be read.</p>`;
-    } catch (e) { $('#strip').innerHTML = unreachable(); }
+    } catch (e) { $('#strip').innerHTML = unreachable(e); }
   }
   async function pullUpdates() {
     try {
@@ -212,13 +284,13 @@ async function renderOverview() {
         ? tbl('cols-upd', [{ t: 'Offset' }, { t: 'Time' }, { t: 'Parties' }, { t: 'Events', r: 1 },
             { t: 'Activity' }], list.map(updateRow).join(''))
         : empty('No updates yet', 'The tail is attached but no update has arrived since it started.');
-    } catch (e) { $('#updates').innerHTML = unreachable(); }
+    } catch (e) { $('#updates').innerHTML = unreachable(e); }
   }
   await Promise.all([pullHealth(), pullUpdates()]);
   try {
     allTemplates = await api('/templates');
     $('#templates').innerHTML = templatesTable();
-  } catch (e) { $('#templates').innerHTML = unreachable(); }
+  } catch (e) { $('#templates').innerHTML = unreachable(e); }
 
   timers.push(setInterval(pullHealth, 2000));
   timers.push(setInterval(pullUpdates, 5000));
@@ -307,7 +379,7 @@ async function renderParty(id) {
         (e.body && e.body.detail) || 'This participant holds nothing for that party.');
       return;
     }
-    view.innerHTML = unreachable();
+    view.innerHTML = unreachable(e);
     return;
   }
 
@@ -463,7 +535,7 @@ async function renderVerify() {
 
   async function pull() {
     try { view.innerHTML = verifyBody(await api('/verify')); }
-    catch (e) { view.innerHTML = unreachable(); }
+    catch (e) { view.innerHTML = unreachable(e); }
   }
   await pull();
 
@@ -472,10 +544,10 @@ async function renderVerify() {
     b.disabled = true;
     b.textContent = 'Running';
     try {
-      await fetch('/verify/run', { method: 'POST' });
+      await api('/verify/run', { method: 'POST' });
       await pull();
     } catch (e) {
-      view.innerHTML = unreachable();
+      view.innerHTML = unreachable(e);
     } finally {
       b.disabled = false;
       b.textContent = 'Run self-check';
@@ -507,6 +579,24 @@ document.addEventListener('click', (e) => {
 
 document.addEventListener('click', (e) => {
   if (e.target.id === 'tpl-all') { templatesExpanded = true; $('#templates').innerHTML = templatesTable(); }
+  const t = e.target.closest('#ov-tabs .tab');
+  if (t) selectTab(t.dataset.panel, false);
+});
+
+// Arrow keys move between tabs, per the WAI-ARIA tabs pattern.
+document.addEventListener('keydown', (e) => {
+  const t = e.target instanceof Element ? e.target.closest('#ov-tabs .tab') : null;
+  if (!t) return;
+  const tabs = Array.from(document.querySelectorAll('#ov-tabs .tab'));
+  const i = tabs.indexOf(t);
+  let j = null;
+  if (e.key === 'ArrowRight') j = (i + 1) % tabs.length;
+  else if (e.key === 'ArrowLeft') j = (i - 1 + tabs.length) % tabs.length;
+  else if (e.key === 'Home') j = 0;
+  else if (e.key === 'End') j = tabs.length - 1;
+  if (j == null) return;
+  e.preventDefault();
+  selectTab(tabs[j].dataset.panel, true);
 });
 
 route();

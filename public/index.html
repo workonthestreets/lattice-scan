@@ -103,6 +103,14 @@
     background: transparent; color: var(--mute); cursor: pointer; }
   .nav__clear:hover { color: var(--bone); background: rgba(255,255,255,0.06); }
   .nav__clear[hidden] { display: none; }
+  .nav__x { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px;
+    margin-left: var(--space-4); border: 1px solid var(--border); border-radius: 2px; color: var(--bone-dim);
+    flex: none; transition: color 120ms ease, border-color 120ms ease; }
+  .nav__x:hover, .nav__x:focus-visible { color: var(--signal); border-color: var(--signal); }
+  .foot { display: flex; justify-content: space-between; gap: var(--space-6); align-items: baseline; }
+  .foot__x { color: var(--mute); white-space: nowrap; text-decoration: none; font-family: var(--font-mono);
+    font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; }
+  .foot__x:hover { color: var(--signal); }
   .cols-txn { grid-template-columns: 92px 130px 1fr 96px minmax(0,1.2fr) 110px; }
   .cols-ev { grid-template-columns: 92px 90px minmax(0,1.6fr) 1fr 96px 110px; }
   .sec__link { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase;
@@ -173,6 +181,11 @@
         stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>
     </button>
   </div>
+  <a class="nav__x" href="https://x.com/canton_scan" target="_blank" rel="noopener" aria-label="Lattice Scan on X"
+    title="@canton_scan on X">
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor"
+      d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+  </a>
 </nav>
 
 <main class="shell page">
@@ -181,8 +194,9 @@
 </main>
 
 <footer class="shell foot">
-  Lattice Scan indexes one Canton Network participant. It holds contracts where a party hosted here is a
-  stakeholder, and nothing else.
+  <span>Lattice Scan indexes one Canton Network participant. It holds contracts where a party hosted here is a
+  stakeholder, and nothing else.</span>
+  <a class="foot__x" href="https://x.com/canton_scan" target="_blank" rel="noopener">@canton_scan on X</a>
 </footer>
 
 <script src="/app.js"></script>

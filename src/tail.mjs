@@ -4,7 +4,7 @@ import { transaction, getMeta, setMeta, getMetaInt, setCursor, upsertCreate, arc
 import { stream } from "./ledger.mjs";
 import { updatesRequest } from "./filter.mjs";
 import { classify, qnameOf } from "./reduce.mjs";
-import { token } from "./token.mjs";
+import { token, tokenTtlMs } from "./token.mjs";
 
 export const tailState = { connected: false, reconnects: 0, staleAuthReconnects: 0, lastFrameAt: null, lastUpdateAt: null, updatesApplied: 0, errors: 0, running: false, lastError: null, connectedAt: null };
 
@@ -70,7 +70,8 @@ export async function runTail(signal) {
     const cursor = Number(getMeta("offset"));
     if (!Number.isFinite(cursor)) throw new Error("no cursor; bootstrap first");
     const recycle = new AbortController();
-    const recycleTimer = setTimeout(() => { log("tail: recycling socket for a fresh token"); recycle.abort(); }, config.socketRecycleSec * 1000);
+    const recycleMs = Math.min(config.socketRecycleSec * 1000, Math.max(60_000, tokenTtlMs() * 0.8));
+    const recycleTimer = setTimeout(() => { log("tail: recycling socket for a fresh token"); recycle.abort(); }, recycleMs);
     const onAbort = () => recycle.abort();
     signal?.addEventListener("abort", onAbort, { once: true });
     try {
@@ -87,9 +88,12 @@ export async function runTail(signal) {
       const code = e.canton?.code;
       if (e.status === 403) { log("tail: 403, the token has no rights for this filter; set FILTER_MODE=parties"); throw e; }
       if (code === "STALE_STREAM_AUTHORIZATION") {
-        // The participant re-checks stream authorization periodically and asks us to reconnect. Normal, not an error.
+        // The participant re-checks stream authorization periodically and asks us to reconnect. Normal, not an
+        // error, but never a tight loop: short pause, fresh token, then resume from the committed cursor.
         tailState.staleAuthReconnects++;
         log(`tail: participant asked for re-authorization (${code}); reconnecting from ${getMeta("offset")}`);
+        await new Promise(r => setTimeout(r, 1000));
+        try { await token(true); } catch (e2) { log(`tail: token re-mint failed: ${e2.message}`); }
         continue;
       }
       tailState.errors++; tailState.lastError = String(e.message || e).slice(0, 300);

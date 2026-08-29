@@ -1,7 +1,7 @@
 // Keycloak client-credentials token with refresh at 80% of its TTL (TTL on DevNet: 900 s).
 import { config, log } from "./config.mjs";
 
-let cached = { tok: null, exp: 0 };
+let cached = { tok: null, exp: 0, ttlMs: 900_000 };
 
 export async function token(force = false) {
   if (!force && cached.tok && Date.now() < cached.exp) return cached.tok;
@@ -17,10 +17,12 @@ export async function token(force = false) {
   });
   if (!r.ok) throw new Error(`token endpoint returned ${r.status}: ${(await r.text()).slice(0, 200)}`);
   const j = await r.json();
-  cached = { tok: j.access_token, exp: Date.now() + Number(j.expires_in || 900) * 800 };
+  cached = { tok: j.access_token, exp: Date.now() + Number(j.expires_in || 900) * 800, ttlMs: Number(j.expires_in || 900) * 1000 };
   log(`token: minted, expires_in=${j.expires_in}s, refresh in ${Math.round((cached.exp - Date.now()) / 1000)}s`);
   return cached.tok;
 }
+
+export const tokenTtlMs = () => cached.ttlMs;
 
 export function tokenClaims(tok) {
   try {

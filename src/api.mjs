@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { config, log } from "./config.mjs";
 import { db, getMeta, getMetaInt, counts } from "./db.mjs";
-import { ledgerEnd } from "./ledger.mjs";
+import { ledgerEnd, get } from "./ledger.mjs";
 import { tailState } from "./tail.mjs";
 import { runVerify, verifyState } from "./verify.mjs";
 import { toUnits, fromUnits } from "./decimal.mjs";
@@ -61,7 +61,7 @@ async function getCurrentRound() {
 let ledgerEndCache = { offset: null, at: 0 };
 async function cachedLedgerEnd() {
   if (Date.now() - ledgerEndCache.at < 2000) return ledgerEndCache.offset;
-  try { ledgerEndCache = { offset: await ledgerEnd(), at: Date.now() }; } catch { ledgerEndCache.at = Date.now(); }
+  try { ledgerEndCache = { offset: (await get("/v2/state/ledger-end", 3000)).offset, at: Date.now() }; } catch { ledgerEndCache.at = Date.now(); }
   return ledgerEndCache.offset;
 }
 

@@ -9,19 +9,26 @@ export class LedgerError extends Error {
   }
 }
 
-async function call(method, path, body) {
+async function call(method, path, body, timeoutMs = config.httpTimeoutMs) {
   const url = config.ledgerHttp + path;
-  const r = await fetch(url, {
-    method,
-    headers: { authorization: "Bearer " + (await token()), "content-type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  let r;
+  try {
+    r = await fetch(url, {
+      method,
+      headers: { authorization: "Bearer " + (await token()), "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (e) {
+    const why = e?.name === "TimeoutError" ? `no answer within ${timeoutMs} ms (DevNet slow or unreachable; retry)` : (e?.cause?.message || e?.message || String(e));
+    throw new LedgerError(0, why, url);
+  }
   const text = await r.text();
   let parsed; try { parsed = JSON.parse(text); } catch { parsed = text; }
   if (!r.ok) throw new LedgerError(r.status, parsed, url);
   return parsed;
 }
-export const get = (path) => call("GET", path);
+export const get = (path, timeoutMs) => call("GET", path, undefined, timeoutMs);
 export const post = (path, body) => call("POST", path, body);
 
 export const ledgerEnd = async () => (await get("/v2/state/ledger-end")).offset;

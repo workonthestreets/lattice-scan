@@ -34,6 +34,7 @@ export const config = {
   socketRecycleSec: Number(env("SOCKET_RECYCLE_SEC", "600")),
   batchSize: Number(env("BATCH_SIZE", "5000")),
   watchdogSec: Number(env("WATCHDOG_SEC", "150")),
+  httpTimeoutMs: Number(env("HTTP_TIMEOUT_MS", "15000")),
   holdingInterface: "#splice-api-token-holding-v1:Splice.Api.Token.HoldingV1:Holding",
 };
 

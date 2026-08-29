@@ -1,0 +1,16 @@
+{
+  "name": "lattice-scan",
+  "version": "0.1.0",
+  "description": "Participant-internal ledger scanner for the Canton Network (JSON Ledger API v2). Snapshot + tail into SQLite, JSON API, self-check.",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "check": "node --no-warnings=ExperimentalWarning src/index.mjs --check",
+    "bootstrap": "node --no-warnings=ExperimentalWarning src/index.mjs --bootstrap",
+    "start": "node --no-warnings=ExperimentalWarning src/index.mjs --run",
+    "verify": "node --no-warnings=ExperimentalWarning src/index.mjs --verify",
+    "measure": "node --no-warnings=ExperimentalWarning scripts/measure.mjs",
+    "oracle": "node --no-warnings=ExperimentalWarning scripts/oracle.mjs"
+  }
+}

@@ -1,0 +1,8 @@
+.env
+*.db
+*.db-wal
+*.db-shm
+node_modules/
+scanner.log
+scanner.pid
+.DS_Store

@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Lattice Scan</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=Instrument+Serif:ital@1&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/system.css">
+<style>
+  :root { color-scheme: dark; }
+  body { min-height: 100vh; }
+  a { color: inherit; text-decoration: none; }
+  a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible {
+    outline: none; box-shadow: var(--shadow-focus); }
+
+  .page { padding-top: var(--space-7); padding-bottom: var(--space-9); }
+  .page__head { margin-bottom: var(--space-7); max-width: 76ch; }
+  .page__h { font-family: var(--font-display); font-weight: 800; margin: 0;
+    font-size: clamp(2.25rem, 4.6vw, 3.5rem); letter-spacing: -0.04em; line-height: 0.96; }
+  .page__h em { font-family: var(--font-italic); font-style: italic; font-weight: 400;
+    color: var(--signal); font-size: 1.05em; letter-spacing: -0.015em; }
+  .page__sub { color: var(--bone-dim); font-size: 1.0625rem; margin: var(--space-4) 0 0;
+    max-width: 68ch; }
+  .pid { font-family: var(--font-mono); font-size: 0.8rem; letter-spacing: 0; color: var(--mute);
+    margin: var(--space-3) 0 0; word-break: break-all; cursor: pointer; }
+
+  .sec { margin-top: var(--space-8); }
+  .sec__head { display: flex; align-items: baseline; justify-content: space-between;
+    gap: var(--space-5); margin-bottom: var(--space-4); flex-wrap: wrap; }
+  .sec__h { font-family: var(--font-display); font-weight: 600; font-size: 1.25rem;
+    letter-spacing: -0.025em; margin: 0; }
+  .note { color: var(--bone-dim); font-size: 0.9375rem; margin: var(--space-3) 0 0; max-width: 72ch; }
+
+  .num { font-family: var(--font-mono); font-size: 0.8rem; letter-spacing: 0; text-transform: none;
+    font-variant-numeric: tabular-nums; color: var(--bone); }
+  .num--r { text-align: right; }
+  .num--dim { color: var(--mute); }
+  .name { font-family: var(--font-display); font-weight: 600; font-size: 0.9375rem;
+    letter-spacing: -0.01em; color: var(--bone); }
+  .alert { color: var(--alert); }
+  .copy { cursor: pointer; }
+
+  .strip { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: var(--gutter); }
+  .strip .card { grid-column: span 3; min-height: 156px; justify-content: flex-start; }
+  .card__value .unit { color: var(--mute); font-size: 0.5em; font-weight: 500;
+    letter-spacing: -0.01em; margin-left: 0.25em; }
+
+  .wrap { overflow-x: auto; }
+  .tbl { border-top: 1px solid var(--border); min-width: 780px; }
+  .tbl__head, .tbl__row { display: grid; gap: var(--space-4); align-items: center;
+    padding: 11px var(--space-4); border-bottom: 1px solid var(--border); }
+  .tbl__head { font-family: var(--font-mono); font-size: var(--text-mono);
+    letter-spacing: var(--track-mono); text-transform: uppercase; color: var(--mute); }
+  a.tbl__row:hover { background: var(--surface-raised); }
+  .tbl__row > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .cols-upd { grid-template-columns: 116px 92px minmax(0,1.3fr) 72px minmax(0,1.6fr); }
+  .cols-tpl { grid-template-columns: minmax(0,1fr) 110px 110px; }
+  .cols-bal { grid-template-columns: minmax(0,1fr) 1fr 1fr 1fr 90px minmax(0,1.2fr); }
+  .cols-hold { grid-template-columns: minmax(0,1.2fr) 96px 1fr 70px 130px 80px 116px; }
+  .cols-hist { grid-template-columns: 92px 130px 1fr 96px minmax(0,1.2fr) 96px; }
+  .cols-con { grid-template-columns: minmax(0,1.8fr) 110px 120px 120px; }
+  .cols-run { grid-template-columns: 92px 116px 110px 110px 92px 92px 92px 80px; }
+  .cols-find { grid-template-columns: minmax(0,1.3fr) 120px minmax(0,1.4fr) minmax(0,1fr); }
+  .cols-ev { grid-template-columns: 116px 70px 110px 96px minmax(0,1.2fr); }
+
+  .kv { display: grid; grid-template-columns: 168px minmax(0, 1fr); border-top: 1px solid var(--border); }
+  .kv > dt { font-family: var(--font-mono); font-size: var(--text-mono);
+    letter-spacing: var(--track-mono); text-transform: uppercase; color: var(--mute);
+    padding: 11px var(--space-4) 11px 0; border-bottom: 1px solid var(--border); }
+  .kv > dd { margin: 0; padding: 11px 0; border-bottom: 1px solid var(--border);
+    color: var(--bone); font-size: 0.9375rem; word-break: break-word; }
+  .kv .num { display: block; }
+
+  .big { font-family: var(--font-display); font-weight: 800; letter-spacing: -0.04em;
+    font-size: clamp(2.5rem, 5vw, 3.5rem); line-height: 1; color: var(--bone);
+    margin: 0 0 var(--space-4); }
+  .empty { border-top: 1px solid var(--border); padding: var(--space-6) 0; }
+  .empty h3 { font-family: var(--font-display); font-weight: 600; font-size: 1.25rem;
+    letter-spacing: -0.025em; margin: 0 0 var(--space-3); }
+  .empty p { color: var(--bone-dim); margin: 0; max-width: 68ch; font-size: 0.9375rem; }
+  .loading { color: var(--mute); font-size: 0.9375rem; padding: var(--space-5) 0; }
+
+  .nav__search { width: 340px; max-width: 38vw; font-family: var(--font-mono); font-size: 0.75rem;
+    letter-spacing: 0; padding: 9px 12px; }
+  .nav__mid { display: inline-flex; align-items: center; gap: var(--space-6); }
+  .head-row { display: flex; align-items: flex-end; justify-content: space-between;
+    gap: var(--space-5); flex-wrap: wrap; }
+  .foot { border-top: 1px solid var(--border); padding-top: var(--space-6); padding-bottom: var(--space-6);
+    color: var(--mute); font-size: 0.875rem; }
+  select.input { height: 40px; padding: 0 12px; width: auto; max-width: 420px;
+    font-size: 0.875rem; }
+
+  @media (max-width: 1100px) { .strip .card { grid-column: span 4; } }
+  @media (max-width: 860px) {
+    .strip .card { grid-column: span 6; }
+    .nav { flex-wrap: wrap; height: auto; padding-top: 12px; padding-bottom: 12px; gap: 12px; }
+    .nav__search { width: 100%; max-width: none; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="nav" aria-label="Primary">
+  <a class="nav__brand" href="#/">
+    <svg class="spark" viewBox="0 0 408 408" aria-hidden="true"><polygon fill="currentColor"
+      points="408 204 285.16 225.79 380.66 306.06 263.4 263.4 306.06 380.66 225.79 285.16 204 408
+      182.21 285.16 101.94 380.66 144.6 263.4 27.34 306.06 122.84 225.79 0 204 122.84 182.21 27.34
+      101.94 144.6 144.6 101.94 27.34 182.21 122.84 204 0 225.79 122.84 306.06 27.34 263.4 144.6
+      380.66 101.94 285.16 182.21 408 204"/></svg>
+    <span class="nav__wordmark">Lattice Scan</span>
+  </a>
+  <ul class="nav__links nav__mid" role="list">
+    <li><a class="nav__link" data-tab="overview" href="#/">Overview</a></li>
+    <li><a class="nav__link" data-tab="party" href="#/party">Party</a></li>
+    <li><a class="nav__link" data-tab="verify" href="#/verify">Verify</a></li>
+  </ul>
+  <label class="sr-only" for="q">Party id or contract id</label>
+  <input class="input nav__search" id="q" autocomplete="off" spellcheck="false"
+    placeholder="Party id or contract id">
+</nav>
+
+<main class="shell page">
+  <header class="page__head" id="head"></header>
+  <div id="view"><p class="loading">Loading</p></div>
+</main>
+
+<footer class="shell foot">
+  Lattice Scan indexes one Canton participant. It holds contracts where a party hosted here is a
+  stakeholder, and nothing else.
+</footer>
+
+<script src="/app.js"></script>
+</body>
+</html>

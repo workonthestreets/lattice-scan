@@ -143,7 +143,8 @@ async function route(req, res) {
   const p = u.pathname;
   const seg = p.split("/").filter(Boolean).map(decodeURIComponent);
   const q = u.searchParams;
-  const lim = Math.min(Number(q.get("limit") || 100), 1000);
+  const limRaw = Number.parseInt(q.get("limit") ?? "", 10); // NaN -> datatype mismatch, <= 0 -> SQLite "no limit"
+  const lim = Number.isFinite(limRaw) ? Math.min(Math.max(limRaw, 1), 1000) : 100;
 
   if (req.method === "GET" && STATIC[p]) {
     const f = path.join(PUBLIC, STATIC[p]);

@@ -75,6 +75,7 @@ export async function backfillHistory({ force = false } = {}) {
       if (e.canton?.code === "PARTICIPANT_PRUNED_DATA_ACCESSED" && Number.isFinite(earliest) && earliest > P) {
         log(`backfill: floor moved to ${earliest} while we were asking; retrying from there`);
         P = earliest; setMeta("pruned_offset", P);
+        updates = 0; events = 0; last = P; // the partial first pass must not be added to the retry
         continue;
       }
       throw e;

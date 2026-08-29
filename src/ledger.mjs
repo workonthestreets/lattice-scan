@@ -39,14 +39,17 @@ export const authenticatedUser = () => get("/v2/authenticated-user");
 /**
  * Open an authenticated WebSocket to `path`, send `request`, call `onFrame(obj)` per JSON frame.
  * Resolves {code, reason, frames} on close. Rejects on in-band JsCantonError frames (top-level `code`)
- * unless `opts.tolerateErrors`. `opts.signal` (AbortSignal) closes the socket early.
+ * unless `opts.tolerateErrors`. `opts.signal` (AbortSignal) closes the socket early; `opts.onOpen` fires once the
+ * socket is open (before the request is sent).
  */
-export function stream(path, request, onFrame, opts = {}) {
-  return new Promise(async (resolve, reject) => {
-    let tok;
-    try { tok = await token(); } catch (e) { return reject(e); }
-    const url = config.ledgerWs + path;
-    const ws = new WebSocket(url, ["jwt.token." + tok, "daml.ws.auth"]);
+export async function stream(path, request, onFrame, opts = {}) {
+  const tok = await token();
+  const url = config.ledgerWs + path;
+  // A plain executor: `new Promise(async …)` would swallow a synchronous throw after the first await (a bad
+  // LEDGER_WS or a subprotocol the parser rejects) and leave the caller awaiting forever.
+  return new Promise((resolve, reject) => {
+    let ws;
+    try { ws = new WebSocket(url, ["jwt.token." + tok, "daml.ws.auth"]); } catch (e) { return reject(e); }
     let frames = 0, settled = false, lastFrameAt = Date.now();
     const finish = (fn, v) => { if (!settled) { settled = true; clearInterval(wd); fn(v); } };
     const wd = opts.watchdogSec ? setInterval(() => {
@@ -56,7 +59,7 @@ export function stream(path, request, onFrame, opts = {}) {
       }
     }, 5000) : null;
     if (opts.signal) opts.signal.addEventListener("abort", () => { try { ws.close(4001, "abort"); } catch {} }, { once: true });
-    ws.onopen = () => ws.send(JSON.stringify(request));
+    ws.onopen = () => { try { opts.onOpen?.(); } catch {} ws.send(JSON.stringify(request)); };
     ws.onmessage = (m) => {
       frames++; lastFrameAt = Date.now();
       let obj;

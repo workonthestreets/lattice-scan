@@ -92,7 +92,7 @@ test("tail connects from the cursor (exclusive) and applies live transactions at
   tailAbort = new AbortController();
   tailDone = app.tail.runTail(tailAbort.signal);
   await waitFor(() => L.tails.size === 1, { label: "tail socket" });
-  assert.equal(app.tail.tailState.connected, true);
+  await waitFor(() => app.tail.tailState.connected, { label: "tail connected (set on the socket's open event)" });
   const req = L.requests.filter(x => x.path === "/v2/updates").at(-1).request;
   assert.equal(req.beginExclusive, 30); assert.equal(req.endInclusive, undefined);
   assert.equal((await api.get("/health")).body.status, "ok");

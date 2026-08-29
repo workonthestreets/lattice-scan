@@ -77,8 +77,9 @@ export async function runTail(signal) {
     try {
       await token();
       log(`tail: connecting from offset ${cursor} (exclusive)`);
-      tailState.connected = true; tailState.connectedAt = Date.now();
-      const res = await stream("/v2/updates", updatesRequest(cursor), handleFrame, { watchdogSec: config.watchdogSec, signal: recycle.signal });
+      tailState.connectedAt = null; // "connected" means the socket is open, not that we are dialling
+      const res = await stream("/v2/updates", updatesRequest(cursor), handleFrame, { watchdogSec: config.watchdogSec, signal: recycle.signal,
+        onOpen: () => { tailState.connected = true; tailState.connectedAt = Date.now(); } });
       tailState.connected = false;
       if (signal?.aborted) break;
       log(`tail: stream closed (${res.code} ${res.reason || ""}), ${res.frames} frames; reconnecting from ${getMeta("offset")}`);

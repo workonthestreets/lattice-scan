@@ -86,10 +86,20 @@ async function api(path, init) {
 
 /* ---------- auth ---------- */
 
+// Where a token comes from, shown beside the sign-in form. The secret is never in this page.
+function tokenHelp() {
+  const url = 'https://auth.dev.digik.cantor8.tech/realms/master/protocol/openid-connect/token';
+  const curl = 'curl -s -X POST ' + url + ' \\\n  -d grant_type=client_credentials -d client_id=hackathon -d client_secret=$CLIENT_SECRET \\\n  | jq -r .access_token';
+  return `<aside class="gate__aside"><h3>Where the token comes from</h3>
+    <p>The scanner has no accounts of its own. The participant's identity provider (Keycloak) issues a bearer token for a client id and secret, and the participant decides what that token may read. The hackathon client is <span class="num">hackathon</span>, its secret is in the organisers' message, and it may read every party; a narrower client sees only its own parties.</p>
+    <p>Sign in exchanges the secret for a 15-minute token and keeps neither; the token stays in this browser. To mint one yourself and paste it on the left:</p>
+    <pre class="code">${h(curl)}</pre></aside>`;
+}
+
 function authGate(e) {
   if (!e || (e.status !== 401 && e.status !== 403)) return null;
   const detail = (e.body && e.body.detail) || (e.status === 401 ? 'Sign in with a participant token.' : 'Not allowed for this token.');
-  return `<div class="empty"><h3>${e.status === 401 ? 'Sign in to the participant' : 'Not allowed for this token'}</h3>
+  return `<div class="empty gate"><div class="gate__main"><h3>${e.status === 401 ? 'Sign in to the participant' : 'Not allowed for this token'}</h3>
     <p>${h(detail)}</p>
     <form class="auth" id="authform">
       <label class="card__label" for="cid">Client id and secret from the identity provider</label>
@@ -105,7 +115,7 @@ function authGate(e) {
         <input class="input auth__grow" id="tok" type="password" autocomplete="off" placeholder="eyJhbGciOi...">
         <button class="btn btn--ghost" type="button" id="usetok">Use token</button>
       </div>
-    </form></div>`;
+    </form></div>${tokenHelp()}</div>`;
 }
 
 function bindAuth() {
@@ -193,9 +203,8 @@ async function route() {
   window.scrollTo(0, 0);
   lastAuthError = null;
   paintWhoami();
-  if (seg === 'party' && /\/history$/.test(arg)) { setTab('party'); return renderPartyHistory(arg.replace(/\/history$/, '')); }
-  if (seg === 'party' && arg) { setTab('party'); return renderParty(arg); }
-  if (seg === 'party') { setTab('party'); return renderPartyPrompt(); }
+  if (seg === 'party' && /\/history$/.test(arg)) { setTab(''); return renderPartyHistory(arg.replace(/\/history$/, '')); }
+  if (seg === 'party' && arg) { setTab(''); return renderParty(arg); }
   if (seg === 'contract' && arg) { setTab(''); return renderContract(arg); }
   if (seg === 'verify') { setTab('verify'); return renderVerify(); }
   setTab('overview');
@@ -337,12 +346,6 @@ async function renderOverview() {
 }
 
 /* ---------- party ---------- */
-
-function renderPartyPrompt() {
-  head.innerHTML = '<h1 class="page__h">Which <em>party</em>?</h1>';
-  view.innerHTML = empty('Enter a party id',
-    'Type a party id or a name fragment in the search field above. Party ids contain a double colon.');
-}
 
 function balancesTable(b) {
   const anyEff = b.balances.some((x) => x.effective_after_holding_fees != null);

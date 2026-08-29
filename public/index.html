@@ -119,6 +119,17 @@
   .auth__row { display: flex; gap: var(--space-3); }
   .auth__grow { flex: 1; }
   .auth__note { color: var(--mute); font-size: 0.875rem; margin: 0; max-width: 60ch; }
+  .gate { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: var(--space-8);
+    align-items: start; }
+  .gate__aside { border-left: 1px solid var(--border); padding-left: var(--space-6); }
+  .gate__aside h3 { font-size: 1rem; letter-spacing: -0.02em; }
+  .gate__aside p { margin: 0 0 var(--space-3); max-width: 58ch; }
+  .gate__aside .code { margin: var(--space-4) 0 0; font-size: 0.75rem; line-height: 1.55;
+    white-space: pre-wrap; word-break: break-all; }
+  @media (max-width: 1000px) {
+    .gate { grid-template-columns: minmax(0, 1fr); gap: var(--space-6); }
+    .gate__aside { border-left: 0; padding-left: 0; border-top: 1px solid var(--border); padding-top: var(--space-5); }
+  }
   .head-row { display: flex; align-items: flex-end; justify-content: space-between;
     gap: var(--space-5); flex-wrap: wrap; }
   .foot { border-top: 1px solid var(--border); padding-top: var(--space-6); padding-bottom: var(--space-6);
@@ -147,8 +158,7 @@
   </a>
   <ul class="nav__links nav__mid" role="list">
     <li><a class="nav__link" data-tab="overview" href="#/">Overview</a></li>
-    <li><a class="nav__link" data-tab="party" href="#/party">Party</a></li>
-    <li><a class="nav__link" data-tab="verify" href="#/verify">Verify</a></li>
+        <li><a class="nav__link" data-tab="verify" href="#/verify">Verify</a></li>
   </ul>
   <button class="nav__who" id="who" type="button" title="Click to forget the token">Not signed in</button>
   <label class="sr-only" for="q">Party id or contract id</label>

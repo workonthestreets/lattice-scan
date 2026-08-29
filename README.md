@@ -33,6 +33,24 @@ npm run measure                 # the numbers above, live
 sh scripts/killtest.sh          # kill -9, restart, resume, self-check
 ```
 
+## Test
+
+```bash
+npm test                        # 76 offline tests, ~3 s, no network, no credentials
+npm run test:live               # 7 acceptance tests against the running scanner + DevNet (needs CLIENT_SECRET)
+```
+
+The offline suite runs the whole pipeline against a mock participant (`test/helpers/mock-participant.mjs`: Keycloak token endpoint, JSON Ledger API v2 over HTTP and a hand-rolled WebSocket server) with an in-memory SQLite mirror:
+
+| File | Proves |
+|---|---|
+| `test/decimal.test.mjs` | exact 10-dp arithmetic, truncation, round-trips |
+| `test/reduce.test.mjs` | template naming, `Holding` view precedence, every holding template family, every activity kind (incl. lock/unlock on net-zero moves), holding-fee decay |
+| `test/db.test.mjs` | idempotent creates and archives, replayed frames are no-ops, orphan counting, transaction rollback, `applyTx` atomicity |
+| `test/api.test.mjs` | every route; the auth gate (401 no token, 401 participant-rejected, 401 expired, 403 other party, 403 participant-wide views, `/search` filtering, per-token cache); `/parties/top` routing; self-check with and without repair |
+| `test/e2e.test.mjs` | bootstrap filter shape and cursor commit; backfill retry when the pruning floor moves mid-request; pre-floor inputs reported as `unclassified`; live tail; `STALE_STREAM_AUTHORIZATION` reconnect from the committed cursor; abnormal close and backoff; `OffsetCheckpoint`; self-check finds and repairs a missing and a phantom contract; resume re-reads nothing; forced bootstrap |
+| `test/live.test.mjs` | the deployed instance: health and tail, auth gate, balances = sum of holdings, self-check 0/0 against the participant, Scan API oracle, demo scripts through the gate |
+
 ## Who can read what
 
 The scanner has no users of its own. With `AUTH_MODE=ledger` (the default) every data route needs a bearer token for the participant, and the scanner asks the participant two questions about it: who is this (`GET /v2/authenticated-user`) and which parties may they read (`GET /v2/users/{id}/rights`). A token the participant rejects gets a 401 here; a party the token cannot read gets a 403 here; views that span every party (overview, templates, self-check) need `CanReadAsAnyParty`. The participant decides, the scanner only relays. `GET /health` stays open (counts, no ledger data). Paste a token into the dashboard's sign-in form; it is kept in the browser only. `AUTH_MODE=off` disables the gate for local development.

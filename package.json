@@ -11,6 +11,9 @@
     "start": "node --no-warnings=ExperimentalWarning src/index.mjs --run",
     "verify": "node --no-warnings=ExperimentalWarning src/index.mjs --verify",
     "measure": "node --no-warnings=ExperimentalWarning scripts/measure.mjs",
-    "oracle": "node --no-warnings=ExperimentalWarning scripts/oracle.mjs"
+    "oracle": "node --no-warnings=ExperimentalWarning scripts/oracle.mjs",
+    "test": "node --test --no-warnings=ExperimentalWarning test/decimal.test.mjs test/reduce.test.mjs test/db.test.mjs test/api.test.mjs test/e2e.test.mjs",
+    "test:live": "LIVE=1 node --test --no-warnings=ExperimentalWarning --test-timeout=180000 test/live.test.mjs",
+    "test:all": "npm test && npm run test:live"
   }
 }

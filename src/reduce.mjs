@@ -49,15 +49,15 @@ export function asHolding(qname, a, view) {
  * Returns activity rows.
  */
 export function classify(tx, created, archived, createdQnames) {
-  const delta = new Map(); // key party|instrument -> {party, instrument, units, nIn, nOut}
-  const bump = (p, i, u, isIn) => {
+  const delta = new Map(); // key party|instrument -> {party, instrument, units, lockedUnits, nIn, nOut}
+  const bump = (p, i, u, isIn, locked) => {
     const k = p + "|" + i;
-    const e = delta.get(k) || { party: p, instrument: i, units: 0n, nIn: 0, nOut: 0 };
-    e.units += u; if (isIn) e.nIn++; else e.nOut++;
+    const e = delta.get(k) || { party: p, instrument: i, units: 0n, lockedUnits: 0n, nIn: 0, nOut: 0 };
+    e.units += u; if (locked) e.lockedUnits += u; if (isIn) e.nIn++; else e.nOut++;
     delta.set(k, e);
   };
-  for (const c of created) if (c.holding) bump(c.holding.owner, c.holding.instrument, toUnits(c.holding.amount), true);
-  for (const a of archived) if (a.holding) bump(a.holding.owner, a.holding.instrument, -toUnits(a.holding.amount), false);
+  for (const c of created) if (c.holding) bump(c.holding.owner, c.holding.instrument, toUnits(c.holding.amount), true, !!c.holding.locked);
+  for (const a of archived) if (a.holding) bump(a.holding.owner, a.holding.instrument, -toUnits(a.holding.amount), false, !!a.holding.locked);
   if (!delta.size) return [];
 
   const rows = [];
@@ -73,8 +73,12 @@ export function classify(tx, created, archived, createdQnames) {
   for (const [instrument, entries] of byInstrument) {
     const neg = entries.filter(e => e.units < 0n), pos = entries.filter(e => e.units > 0n), zero = entries.filter(e => e.units === 0n);
     const total = entries.reduce((s, e) => s + e.units, 0n);
-    for (const z of zero) if (z.nIn + z.nOut > 0)
-      rows.push({ ...base, party: z.party, instrument, kind: "self_merge", amount: "0.0000000000", counterparty: null, confidence: "exact" });
+    // Net zero for one party: coin moved between its own UTXOs. If the locked share changed, that is a lock or
+    // an unlock (LockedAmulet carries the same instrument as Amulet in the Holding view); otherwise a self merge.
+    for (const z of zero) if (z.nIn + z.nOut > 0) {
+      const kind = z.lockedUnits > 0n ? "lock" : z.lockedUnits < 0n ? "unlock" : "self_merge";
+      rows.push({ ...base, party: z.party, instrument, kind, amount: fromUnits(z.lockedUnits < 0n ? -z.lockedUnits : z.lockedUnits), counterparty: null, confidence: "exact" });
+    }
     if (neg.length === 1 && pos.length >= 1 && total === 0n) {
       const s = neg[0];
       rows.push({ ...base, party: s.party, instrument, kind: "transfer_out", amount: fromUnits(-s.units), counterparty: pos.length === 1 ? pos[0].party : null, confidence: pos.length === 1 ? "exact" : "medium" });

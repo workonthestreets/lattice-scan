@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 // Prints the numbers for the judges from the running scanner.
-import { config } from "../src/config.mjs";
-const API = process.env.API || `http://localhost:${config.port}`;
-const j = async (p, o) => { const r = await fetch(API + p, o); return r.json(); };
+import { apiJson as j } from "./_client.mjs";
 
 const h = await j("/health");
 const kinds = await j("/activity/kinds");

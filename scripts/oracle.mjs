@@ -3,8 +3,8 @@
 // (network-wide, no auth; the DSO is a signatory on every Amulet). Snapshot is hourly.
 // usage: node scripts/oracle.mjs [party ...]   (default: top CC parties from our own index)
 import { config } from "../src/config.mjs";
+import { apiFetch } from "./_client.mjs";
 
-const API = process.env.API || `http://localhost:${config.port}`;
 const SCAN = config.scanUrl;
 
 async function j(url, opts) { const r = await fetch(url, opts); if (!r.ok) throw new Error(`${r.status} ${url}: ${(await r.text()).slice(0, 200)}`); return r.json(); }
@@ -20,7 +20,7 @@ console.log(`scan oracle: migration ${migrationId}, snapshot record_time ${snap.
 const SCAN_HOLDINGS_CAP = 1000;
 let parties = process.argv.slice(2);
 if (!parties.length) {
-  const top = await j(`${API}/parties/top?instrument=Amulet&max_utxos=100&order=balance&limit=12`);
+  const top = await apiFetch(`/parties/top?instrument=Amulet&max_utxos=100&order=balance&limit=12`).then(async r => { if (!r.ok) throw new Error(`${r.status} /parties/top: ${(await r.text()).slice(0, 200)}`); return r.json(); });
   parties = top.map(t => t.party);
 }
 
@@ -35,7 +35,7 @@ async function scanSummary(party) {
 let match = 0, mismatch = 0, skipped = 0, moved = 0;
 const rows = [];
 for (const p of parties) {
-  const ours = await fetch(`${API}/parties/${encodeURIComponent(p)}/balances`).then(r => r.ok ? r.json() : null);
+  const ours = await apiFetch(`/parties/${encodeURIComponent(p)}/balances`).then(r => r.ok ? r.json() : null);
   const cc = ours?.balances?.find(b => b.instrument === "Amulet");
   const theirs = await scanSummary(p);
   const a = cc ? cc.balance : "0.0000000000";
@@ -46,7 +46,7 @@ for (const p of parties) {
   if (!ok) {
     // Our index is live; the Scan snapshot is hourly. If the party moved coin after the snapshot, the
     // difference is expected and is not evidence against either side.
-    const hist = await fetch(`${API}/parties/${encodeURIComponent(p)}/history?limit=1`).then(r => r.ok ? r.json() : null);
+    const hist = await apiFetch(`/parties/${encodeURIComponent(p)}/history?limit=1`).then(r => r.ok ? r.json() : null);
     const lastMove = hist?.classified?.[0]?.record_time;
     if (lastMove && lastMove > snap.record_time) { status = "moved since snapshot"; moved++; }
     else mismatch++;
